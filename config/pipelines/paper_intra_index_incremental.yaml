@@ -1,0 +1,12 @@
+name: paper_intra_index_incremental
+description: |
+  Refresh one paper's intra-paper KG index after upstream content changed
+  in papers.db. The single node owns its own paper_db_reader call; unchanged
+  sections (matched by content_hash) are skipped without paying any LLM cost.
+
+nodes:
+  - id: refresh_paper
+    module: paper_intra_index_incremental
+    input_mapping:
+      paper_id: config.paper_id
+      db_path: config.db_path

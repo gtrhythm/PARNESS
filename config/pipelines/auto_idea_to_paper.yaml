@@ -1,0 +1,250 @@
+name: auto_idea_to_paper
+config:
+  max_idea_rounds: 10
+  papers_per_merge: 3
+  ideas_per_round: 3
+  resource_constraint: "feasible on a single NVIDIA V100 32GB GPU"
+  db_path: "output/papers.db"
+  score_threshold: 7.0
+  output_dir: "output/auto_idea_to_paper"
+  max_rounds: 300
+  persist_file: "output/auto_idea_to_paper/pipeline_state.jsonl"
+
+nodes:
+  # ============================================================
+  # Phase 1: Iterative Idea Generation (10 rounds x 3 papers)
+  # ============================================================
+
+  - id: paper_retriever
+    module: paper_retriever
+    params:
+      db_path: "output/papers.db"
+      num_papers: 1
+
+  - id: paper_summary
+    module: paper_summary_agent
+    depends_on: [paper_retriever]
+    input_mapping:
+      paper: output.paper_retriever.papers
+
+  - id: accumulate
+    module: summary_accumulator
+    depends_on: [paper_summary]
+    params:
+      target_count: 3
+      state_file: "output/auto_idea_to_paper/accumulator_state.json"
+    input_mapping:
+      summary: output.paper_summary.summary
+      key_innovations: output.paper_summary.key_innovations
+      open_problems: output.paper_summary.open_problems
+      transferable_techniques: output.paper_summary.transferable_techniques
+      paper_title: output.paper_summary.paper_title
+    routes:
+      need_more: paper_retriever
+      ready: idea_evolution
+
+  - id: idea_evolution
+    module: idea_evolution_agent
+    depends_on: [accumulate]
+    params:
+      ideas_per_round: 3
+      resource_constraint: "feasible on a single NVIDIA V100 32GB GPU"
+    input_mapping:
+      merged_summaries: output.accumulate.merged_summaries
+      previous_ideas: output.accumulate.previous_ideas
+      resource_constraint: config.resource_constraint
+
+  - id: round_control
+    module: round_controller
+    depends_on: [idea_evolution]
+    params:
+      max_rounds: 10
+      state_file: "output/auto_idea_to_paper/round_state.json"
+      accumulator_state_file: "output/auto_idea_to_paper/accumulator_state.json"
+    input_mapping:
+      ideas: output.idea_evolution.ideas
+    routes:
+      continue: paper_retriever
+      exit: idea_scoring
+
+  # ============================================================
+  # Phase 2: Idea Scoring & Best Selection
+  # ============================================================
+
+  - id: idea_scoring
+    module: idea_evaluator
+    depends_on: [round_control]
+    input_mapping:
+      ideas: output.round_control.ideas
+    output_mapping:
+      ranked_ideas: scored_ideas
+
+  - id: best_selector
+    module: best_idea_selector
+    depends_on: [idea_scoring]
+    input_mapping:
+      ranked_ideas: output.idea_scoring.scored_ideas
+
+  # ============================================================
+  # Phase 3: Experiment via OpenCode (+ success gate)
+  # ============================================================
+
+  - id: experiment_plan
+    module: experiment_plan_generator
+    depends_on: [best_selector]
+    input_mapping:
+      content: output.best_selector.idea_description
+
+  - id: experiment_exec
+    module: experiment_executor_opencode
+    depends_on: [experiment_plan]
+    params:
+      timeout: 3600
+    input_mapping:
+      experiment_plan: output.experiment_plan.experiment_plan
+
+  - id: experiment_gate
+    module: experiment_success_gate
+    depends_on: [experiment_exec]
+    params:
+      max_retries: 3
+      state_file: "output/auto_idea_to_paper/experiment_gate_state.json"
+    input_mapping:
+      experiment_results: output.experiment_exec.experiment_results
+      execution_log: output.experiment_exec.execution_log
+    routes:
+      retry: experiment_exec
+      pass: experiment_report
+      skip: experiment_report
+
+  - id: experiment_report
+    module: experiment_report_generator
+    depends_on: [experiment_gate]
+    input_mapping:
+      experiment_results: output.experiment_exec.experiment_results
+      idea: output.best_selector.idea_description
+
+  - id: chart_gen
+    module: chart_code_generator
+    depends_on: [experiment_report]
+    input_mapping:
+      experiment_results: output.experiment_exec.experiment_results
+
+  # ============================================================
+  # Phase 4: Paper Writing + Charts -> MD
+  # ============================================================
+
+  - id: paper_draft
+    module: paper_writer
+    depends_on: [experiment_report, chart_gen, best_selector]
+    input_mapping:
+      title: output.best_selector.idea_title
+      idea: output.best_selector.best_idea
+      experiment_results: output.experiment_report.report
+    output_mapping:
+      draft: paper_draft
+
+  - id: paper_output
+    module: paper_md_assembler
+    depends_on: [paper_draft, chart_gen]
+    params:
+      output_dir: "output/auto_idea_to_paper"
+    input_mapping:
+      markdown_content: output.paper_draft.paper_draft
+      chart_paths: output.chart_gen.chart_paths
+      idea: output.best_selector.best_idea
+
+  # ============================================================
+  # Incremental Persistence Taps (no downstream, append to jsonl)
+  # ============================================================
+
+  - id: persist_summary
+    module: incremental_persistence
+    depends_on: [paper_summary]
+    params:
+      file_path: "output/auto_idea_to_paper/pipeline_state.jsonl"
+      source: "paper_summary"
+    input_mapping:
+      data: output.paper_summary
+
+  - id: persist_idea
+    module: incremental_persistence
+    depends_on: [idea_evolution]
+    params:
+      file_path: "output/auto_idea_to_paper/pipeline_state.jsonl"
+      source: "idea_evolution"
+    input_mapping:
+      data: output.idea_evolution
+
+  - id: persist_scoring
+    module: incremental_persistence
+    depends_on: [idea_scoring]
+    params:
+      file_path: "output/auto_idea_to_paper/pipeline_state.jsonl"
+      source: "idea_scoring"
+    input_mapping:
+      data: output.idea_scoring
+
+  - id: persist_exp_plan
+    module: incremental_persistence
+    depends_on: [experiment_plan]
+    params:
+      file_path: "output/auto_idea_to_paper/pipeline_state.jsonl"
+      source: "experiment_plan"
+    input_mapping:
+      data: output.experiment_plan
+
+  - id: persist_exp_result
+    module: incremental_persistence
+    depends_on: [experiment_gate]
+    params:
+      file_path: "output/auto_idea_to_paper/pipeline_state.jsonl"
+      source: "experiment_gate"
+    input_mapping:
+      data: output.experiment_exec
+
+  - id: persist_exp_report
+    module: incremental_persistence
+    depends_on: [experiment_report]
+    params:
+      file_path: "output/auto_idea_to_paper/pipeline_state.jsonl"
+      source: "experiment_report"
+    input_mapping:
+      data: output.experiment_report
+
+  - id: persist_paper
+    module: incremental_persistence
+    depends_on: [paper_draft]
+    params:
+      file_path: "output/auto_idea_to_paper/pipeline_state.jsonl"
+      source: "paper_draft"
+    input_mapping:
+      data: output.paper_draft
+
+edges:
+  # Phase 1 inner loop
+  - {from: paper_retriever, to: paper_summary}
+  - {from: paper_summary, to: accumulate}
+  - {from: accumulate, to: paper_retriever, condition: need_more, backtrack: true}
+  - {from: accumulate, to: idea_evolution, condition: ready}
+
+  # Phase 1 outer loop
+  - {from: idea_evolution, to: round_control}
+  - {from: round_control, to: paper_retriever, condition: continue, backtrack: true}
+  - {from: round_control, to: idea_scoring, condition: exit}
+
+  # Phase 2
+  - {from: idea_scoring, to: best_selector}
+
+  # Phase 3
+  - {from: best_selector, to: experiment_plan}
+  - {from: experiment_plan, to: experiment_exec}
+  - {from: experiment_exec, to: experiment_gate}
+  - {from: experiment_gate, to: experiment_exec, condition: retry, backtrack: true}
+  - {from: experiment_gate, to: experiment_report, condition: pass}
+  - {from: experiment_gate, to: experiment_report, condition: skip}
+
+  # Phase 4
+  - {from: experiment_report, to: chart_gen}
+  - {from: chart_gen, to: paper_draft}
+  - {from: paper_draft, to: paper_output}

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+</head>
+<body>
+    <h1>API Test</h1>
+    <pre id="output">Loading...</pre>
+    <script>
+        async function test() {
+            const output = document.getElementById('output');
+            try {
+                // Test health
+                const health = await fetch('/health').then(r => r.json());
+                output.textContent = 'Health: ' + JSON.stringify(health) + '\n\n';
+                
+                // Test statuses
+                const statuses = await fetch('/api/dag/status').then(r => r.json());
+                output.textContent += 'Statuses (' + statuses.length + '):\n';
+                statuses.forEach(s => {
+                    output.textContent += '  - ' + s.pipeline_name + ' | ' + s.session_id.substring(0,8) + ' | ' + s.status + '\n';
+                });
+                
+                // Show sessions in dropdown
+                if (statuses.length > 0) {
+                    output.textContent += '\nFirst session detail:\n';
+                    const detail = await fetch('/api/dag/status/' + statuses[0].session_id).then(r => r.json());
+                    output.textContent += JSON.stringify(detail, null, 2);
+                }
+            } catch (e) {
+                output.textContent = 'Error: ' + e.message;
+            }
+        }
+        test();
+    </script>
+</body>
+</html>

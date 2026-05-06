@@ -1,0 +1,37 @@
+name: idea_mining
+config:
+  topic: ""
+
+nodes:
+  - id: idea_generation
+    module: idea_generator
+    input_mapping:
+      innovations: innovations
+      references: references
+      task_domain: config.topic
+    output_mapping:
+      ideas: generated_ideas
+      report: idea_report
+
+  - id: idea_review
+    module: idea_reviewer
+    depends_on: [idea_generation]
+    input_mapping:
+      ideas: output.idea_generation.ideas
+    output_mapping:
+      reviewed_ideas: reviewed_ideas
+      review_report: review_summary
+
+  - id: idea_evaluation
+    module: idea_evaluator
+    depends_on: [idea_generation]
+    input_mapping:
+      ideas: output.idea_generation.ideas
+    output_mapping:
+      evaluations: evaluated_ideas
+      summary: evaluation_summary
+
+edges:
+  - {from: idea_generation, to: idea_review}
+  - {from: idea_generation, to: idea_evaluation}
+  - {from: idea_review, to: idea_evaluation}

@@ -1,0 +1,136 @@
+name: simple_idea_test
+config:
+  ideas:
+    - title: "二分插入排序 vs 普通插入排序性能对比研究"
+      description: >
+        研究在插入排序中使用二分查找确定插入位置的性能优化。
+        普通插入排序在寻找插入位置时采用线性扫描，比较次数为O(n)；
+        而二分插入排序利用数组有序性，通过二分查找将比较次数降低到O(log n)。
+        然而，元素移动次数仍为O(n)，且二分查找的非顺序访问模式可能影响缓存命中率。
+        本实验将在不同数据规模（100, 1000, 10000, 100000）和数据分布
+        （随机、近似有序、逆序、重复元素）下对比两种算法的实际运行时间，
+        验证理论分析并与实际性能进行对照。
+      category: "algorithm"
+      novelty_score: 4.0
+      feasibility_score: 9.5
+      impact_score: 3.0
+      methodology: "实现二分插入排序和普通插入排序，在Python中用timeit测量不同规模和分布下的运行时间，每组重复100次取平均值"
+      expected_results: "二分插入排序在比较次数上显著优于普通插入排序，但实际运行时间优势随数据规模和数据分布变化而不同"
+      required_resources: "Python 3.10, 无需GPU"
+      risk_analysis: "风险极低，经典算法验证实验"
+      related_work_diff: "教科书级对比，侧重于实际性能而非理论分析"
+      source_paper_ids: []
+    - title: "不同快速排序pivot选择策略的性能比较"
+      description: >
+        比较快速排序中三种pivot选择策略：首元素、随机选择、三数取中法。
+        首元素策略在已排序或逆序数据上退化为O(n^2)；
+        随机选择策略平均O(n log n)但最坏情况仍为O(n^2)；
+        三数取中法通过选取首、中、尾三个元素的中位数作为pivot，
+        在实践中显著减少了退化的概率。
+        实验将在不同数据规模和分布下测量三种策略的运行时间和递归深度。
+      category: "algorithm"
+      novelty_score: 3.5
+      feasibility_score: 9.5
+      impact_score: 3.0
+      methodology: "实现三种pivot选择策略的快排，对比运行时间和递归深度"
+      expected_results: "三数取中法综合表现最优，首元素策略在特殊数据上退化严重"
+      required_resources: "Python 3.10"
+      risk_analysis: "风险极低"
+      related_work_diff: "经典排序算法对比实验"
+      source_paper_ids: []
+    - title: "哈希表开放地址法中不同探测序列的冲突率对比"
+      description: >
+        对比哈希表开放地址法中线性探测、二次探测和双重哈希三种探测序列
+        在不同负载因子（0.3到0.9）下的平均查找长度和冲突率。
+        线性探测容易产生聚集（clustering），二次探测消除了一次聚集但可能产生二次聚集，
+        双重哈希理论上分布最均匀但计算开销最大。
+        实验将使用不同大小的哈希表和随机数据，测量平均和最坏情况的查找长度。
+      category: "algorithm"
+      novelty_score: 3.0
+      feasibility_score: 9.5
+      impact_score: 2.5
+      methodology: "实现三种探测策略，在不同负载因子下测量平均查找长度"
+      expected_results: "双重哈希冲突率最低，线性探测在高负载因子下性能退化最严重"
+      required_resources: "Python 3.10"
+      risk_analysis: "风险极低"
+      related_work_diff: "经典数据结构性能验证"
+      source_paper_ids: []
+  idea:
+    title: "二分插入排序 vs 普通插入排序性能对比研究"
+    description: >
+      研究在插入排序中使用二分查找确定插入位置的性能优化。
+      普通插入排序在寻找插入位置时采用线性扫描，比较次数为O(n)；
+      而二分插入排序利用数组有序性，通过二分查找将比较次数降低到O(log n)。
+      然而元素移动次数仍为O(n)，且二分查找的非顺序访问模式可能影响缓存命中率。
+      本实验将在不同数据规模和数据分布下对比两种算法的实际运行时间。
+    category: "algorithm"
+    novelty_score: 4.0
+    feasibility_score: 9.5
+    impact_score: 3.0
+  idea_text: "研究在插入排序中使用二分查找确定插入位置的性能优化。普通插入排序的线性扫描比较次数为O(n)，二分插入排序通过二分查找将比较次数降低到O(log n)。然而元素移动次数仍为O(n)，且二分查找的非顺序访问模式可能影响缓存命中率。实验将在不同数据规模(100, 1000, 10000, 100000)和数据分布(随机、近似有序、逆序、重复元素)下对比两种算法的实际运行时间，验证理论分析与实际性能的差异。"
+  idea_title: "二分插入排序 vs 普通插入排序性能对比研究"
+  topic: "算法性能优化与对比"
+
+nodes:
+  - id: idea_evaluation
+    module: idea_evaluator
+    input_mapping:
+      ideas: config.ideas
+    output_mapping:
+      evaluations: evaluated_ideas
+      ranked_ideas: ranked_ideas
+      summary: evaluation_summary
+
+  - id: experiment_plan
+    module: experiment_plan_generator
+    depends_on: [idea_evaluation]
+    input_mapping:
+      content: config.idea_text
+    output_mapping:
+      experiment_plan: experiment_plan
+
+  - id: experiment_report
+    module: experiment_report_generator
+    depends_on: [experiment_plan]
+    input_mapping:
+      idea: config.idea_text
+      experiment_plan: output.experiment_plan.experiment_plan
+      experiment_results: output.experiment_plan.experiment_plan
+    output_mapping:
+      report: experiment_report
+
+  - id: paper_writing
+    module: paper_writer
+    depends_on: [experiment_report]
+    input_mapping:
+      title: config.idea_title
+      idea: config.idea
+      experiment_results: output.experiment_report.report
+    output_mapping:
+      draft: paper_draft
+
+  - id: paper_review
+    module: paper_reviewer
+    depends_on: [paper_writing]
+    input_mapping:
+      paper_content: output.paper_writing.draft
+    output_mapping:
+      overall_score: review_score
+      summary: review_summary
+
+  - id: paper_revision
+    module: paper_editor
+    depends_on: [paper_review, paper_writing]
+    input_mapping:
+      paper_draft: output.paper_writing.draft
+      review_comments: output.paper_review.critiques
+    output_mapping:
+      revised_draft: final_paper
+
+edges:
+  - {from: idea_evaluation, to: experiment_plan}
+  - {from: experiment_plan, to: experiment_report}
+  - {from: experiment_report, to: paper_writing}
+  - {from: paper_writing, to: paper_review}
+  - {from: paper_review, to: paper_revision, condition: success}
+  - {from: paper_review, to: paper_writing, condition: failed}

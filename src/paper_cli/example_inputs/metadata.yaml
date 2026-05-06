@@ -1,0 +1,29 @@
+title: "parness: A Paper Harness for End-to-End Automated Scientific Research"
+short_title: "parness: A Paper Harness for Automated Research"
+authors:
+  - name: "Yuchen Wang"
+    email: "wangyuchen@buaa.edu.cn"
+    corresponding: true
+    affiliation_id: 1
+  - name: "Zhongzhi Luan"
+    email: "07391@buaa.edu.cn"
+    corresponding: true
+    affiliation_id: 1
+affiliations:
+  - id: 1
+    name: "Sino-German Joint Software Institute, Beihang University"
+    location: "Beijing, China"
+target_venue: "arXiv preprint (cs.AI, cs.SE)"
+keywords:
+  - automated scientific research
+  - LLM agents
+  - DAG orchestration
+  - multi-agent systems
+  - knowledge graphs
+  - pipeline DSL
+abstract_seed: |
+  Recent autonomous research systems demonstrate that LLM agents can ideate,
+  run experiments, and write papers, but each fixes a particular control-flow
+  shape. parness decomposes the entire research life-cycle into a declarative
+  DAG over 116 registered modules and 20 YAML pipelines, delegating all domain
+  semantics to ordinary modules through a four-field agent contract.

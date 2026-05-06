@@ -1,0 +1,85 @@
+# Paper-search intents: each entry becomes one parallel branch in the
+# generated pipeline (paper_search_multi_intent.yaml).
+#
+# Edit this file → run scripts/gen_paper_search_yaml.py → the generator
+# rewrites paper_search_multi_intent.yaml with one (s2_summary, pdf_download,
+# paper_search_persist) chain per intent.
+#
+# Fields per intent:
+#   tag      — unique slug used for node IDs and the per-branch index file
+#   domain   — passed to s2_summary as the SearchIntent.domain hint
+#   keyword  — single keyword string sent to S2 /paper/search
+#
+# Top-level config controls cross-cutting knobs (year range, papers per
+# branch, output folders).
+
+config:
+  year_from: 2023
+  year_to: 2026
+  max_papers_per_intent: 20
+  fetch_references: true
+  output_dir: "downloaded_papers/paper_search"
+  pdf_dir: "downloaded_papers/paper_search/_pdf_staging"
+
+intents:
+  # ===== 格点物理 / Lattice =====
+  - {tag: lattice_qcd_spectrum,    domain: physics,
+     keyword: "lattice QCD hadron spectrum"}
+  - {tag: lattice_qcd_ml,          domain: physics,
+     keyword: "lattice gauge theory machine learning"}
+  - {tag: lattice_finite_temp,     domain: physics,
+     keyword: "lattice QCD finite temperature transition"}
+  - {tag: lattice_form_factor,     domain: physics,
+     keyword: "lattice QCD nucleon form factor"}
+
+  # ===== 流体力学 / Fluid Mechanics =====
+  - {tag: turbulence_dns,          domain: physics,
+     keyword: "turbulence direct numerical simulation Reynolds"}
+  - {tag: turbulence_ml,           domain: physics,
+     keyword: "machine learning turbulence subgrid model"}
+  - {tag: cfd_multiphase,          domain: engineering,
+     keyword: "multiphase flow computational fluid dynamics"}
+  - {tag: lattice_boltzmann,       domain: physics,
+     keyword: "lattice Boltzmann method fluid simulation"}
+
+  # ===== 神经学 / 脑科学 =====
+  - {tag: bci_decoding,            domain: neuroscience,
+     keyword: "brain-computer interface neural decoding"}
+  - {tag: connectomics_em,         domain: neuroscience,
+     keyword: "whole brain connectome electron microscopy"}
+  - {tag: brain_organoid,          domain: neuroscience,
+     keyword: "human cortical brain organoid"}
+  - {tag: neural_population,       domain: neuroscience,
+     keyword: "neural population dynamics motor cortex"}
+  - {tag: alzheimer_mech,          domain: neuroscience,
+     keyword: "Alzheimer disease tau pathology mechanism"}
+
+  # ===== 计算化学 / Computational Chemistry =====
+  - {tag: dft_xc_ml,               domain: chemistry,
+     keyword: "machine learning density functional theory exchange correlation"}
+  - {tag: nnp_potential,           domain: chemistry,
+     keyword: "neural network interatomic potential ab initio"}
+  - {tag: md_force_field,          domain: chemistry,
+     keyword: "machine learning molecular dynamics force field"}
+  - {tag: quantum_chem_cc,         domain: chemistry,
+     keyword: "coupled cluster ab initio quantum chemistry"}
+
+  # ===== 材料 / 生物 / 医药 / 物理其他 / 气候 =====
+  - {tag: solid_state_battery,     domain: materials,
+     keyword: "solid state battery electrolyte interface"}
+  - {tag: perovskite_solar,        domain: materials,
+     keyword: "perovskite solar cell stability efficiency"}
+  - {tag: protein_lm,              domain: bio,
+     keyword: "protein language model structure prediction"}
+  - {tag: scrna_seq,               domain: bio,
+     keyword: "single cell RNA sequencing trajectory"}
+  - {tag: ai_drug_discovery,       domain: medicine,
+     keyword: "AI generative model drug discovery"}
+  - {tag: glp1_cardio,             domain: medicine,
+     keyword: "GLP-1 receptor agonist cardiovascular outcome"}
+  - {tag: topological_matter,      domain: physics,
+     keyword: "topological superconductor Majorana zero mode"}
+  - {tag: gravitational_waves,     domain: physics,
+     keyword: "binary neutron star merger gravitational wave"}
+  - {tag: climate_attribution,     domain: physics,
+     keyword: "extreme weather event attribution climate change"}

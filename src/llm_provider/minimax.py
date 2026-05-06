@@ -1,0 +1,72 @@
+import re
+from typing import List, Dict
+import base64
+from .base import BaseLLMClient
+
+_THINKING_PATTERN = re.compile(r'<think\b.*?</think\s*>', re.DOTALL)
+
+
+def _strip_thinking(content: str) -> str:
+    return _THINKING_PATTERN.sub('', content).strip()
+
+
+class MiniMaxClient(BaseLLMClient):
+    def __init__(self, api_key: str = None, model: str = "MiniMax-M2.7", base_url: str = "https://api.minimaxi.com/v1", timeout: float = 180.0, max_retries: int = 0):
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self._client = None
+
+    def _get_client(self):
+        if self._client is not None:
+            return self._client
+        try:
+            from openai import AsyncOpenAI
+        except ImportError:
+            raise ImportError("openai package is required. Install with: pip install openai")
+        self._client = AsyncOpenAI(
+            api_key=self.api_key, base_url=self.base_url,
+            timeout=self.timeout, max_retries=self.max_retries,
+        )
+        return self._client
+
+    async def chat(self, messages: List[Dict], **kwargs) -> str:
+        client = self._get_client()
+        response = await client.chat.completions.create(
+            model=kwargs.get("model", self.model),
+            messages=messages,
+            **kwargs
+        )
+        return _strip_thinking(response.choices[0].message.content)
+
+    async def chat_with_image(self, messages: List[Dict], image_path: str, **kwargs) -> str:
+        client = self._get_client()
+        with open(image_path, "rb") as image_file:
+            base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+
+        image_message = {
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
+                {"type": "text", "text": messages[-1].get("content", "") if messages else ""}
+            ]
+        }
+        modified_messages = messages[:-1] + [image_message] if messages else [image_message]
+
+        response = await client.chat.completions.create(
+            model=kwargs.get("model", self.model),
+            messages=modified_messages,
+            **kwargs
+        )
+        return _strip_thinking(response.choices[0].message.content)
+
+    async def embed(self, text: str, **kwargs) -> List[float]:
+        client = self._get_client()
+        response = await client.embeddings.create(
+            model=kwargs.get("model", "embedding-model"),
+            input=text,
+            **kwargs
+        )
+        return response.data[0].embedding

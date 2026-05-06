@@ -1,0 +1,59 @@
+name: experiment_opencode
+config:
+  idea_id: ""
+  idea_title: ""
+  idea_description: ""
+  max_rounds: 4
+  score_threshold: 6.5
+  timeout_seconds: 3600
+  max_retries: 3
+  max_concurrent: 1
+  task_type: "classification"
+  environment:
+    env_type: "local"
+    python_version: "3.10"
+    gpu_count: 0
+    extra_packages: []
+  evaluator:
+    task_type: "classification"
+    generate_visualizations: true
+    generate_report: true
+    report_format: "markdown"
+
+nodes:
+  - id: experiment_design
+    module: experiment_plan_generator
+    input_mapping:
+      content: config.idea_description
+    output_mapping:
+      experiment_plan: designed_experiments
+
+  - id: iterative_experiment
+    module: experiment_runner
+    depends_on: [experiment_design]
+    input_mapping:
+      designed_experiments: output.experiment_design.experiment_plan
+      idea_id: config.idea_id
+      idea_title: config.idea_title
+      idea_description: config.idea_description
+    output_mapping:
+      experiment_results: experiment_results
+      execution_metrics: execution_metrics
+      best_result: best_experiment_result
+      summary: execution_summary
+
+  - id: experiment_evaluation
+    module: experiment_evaluator
+    depends_on: [iterative_experiment]
+    input_mapping:
+      experiment_results: output.iterative_experiment.experiment_results
+      task_type: config.task_type
+    output_mapping:
+      evaluation_metrics: evaluation_metrics
+      evaluation_report: evaluation_report
+      comparison_with_baseline: baseline_comparison
+      summary: eval_summary
+
+edges:
+  - {from: experiment_design, to: iterative_experiment}
+  - {from: iterative_experiment, to: experiment_evaluation}

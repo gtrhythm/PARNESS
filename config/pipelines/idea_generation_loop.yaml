@@ -1,0 +1,86 @@
+name: idea_generation_loop
+config:
+  max_rounds: 300
+  target_idea_count: 50
+  score_threshold: 7.0
+  num_papers_per_retrieval: 5
+  task_domain: ""
+
+nodes:
+  - id: paper_retriever
+    module: paper_retriever
+    params:
+      db_path: "output/papers.db"
+      num_papers: 5
+    input_mapping:
+      num_papers: config.num_papers_per_retrieval
+
+  - id: idea_generator
+    module: idea_generator
+    depends_on: [paper_retriever]
+    params:
+      target_count: 1
+      generation_strategy: diverse
+    input_mapping:
+      innovations: output.paper_retriever.innovations
+      references: output.paper_retriever.references
+      task_domain: config.task_domain
+
+  - id: idea_evaluator
+    module: idea_evaluator
+    depends_on: [idea_generator]
+    input_mapping:
+      ideas: output.idea_generator.ideas
+
+  - id: idea_judge
+    module: idea_judge
+    depends_on: [idea_evaluator]
+    params:
+      threshold: 7.0
+    input_mapping:
+      idea: output.idea_evaluator.ranked_ideas
+      overall_score: output.idea_evaluator.avg_score
+    routes:
+      accept: idea_saver
+      reject: idea_counter
+
+  - id: idea_saver
+    module: idea_saver
+    params:
+      output_dir: "output/accepted_ideas"
+    input_mapping:
+      idea: output.idea_judge.idea
+      overall_score: output.idea_judge.overall_score
+    routes:
+      default: idea_counter
+
+  - id: idea_counter
+    module: idea_counter
+    depends_on: [idea_judge]
+    params:
+      target_count: 50
+      state_file: "output/idea_counter_state.json"
+    input_mapping:
+      judge_decision: output.idea_judge.judge_decision
+    routes:
+      continue: paper_retriever
+      exit: result_export
+
+  - id: result_export
+    module: result_exporter
+    depends_on: [idea_counter]
+    params:
+      output_dir: "output/idea_generation_loop"
+    input_mapping:
+      ideas: output.idea_counter.accepted_count
+      generation_report: output.idea_counter.total_iterations
+
+edges:
+  - {from: paper_retriever, to: idea_generator}
+  - {from: idea_generator, to: idea_evaluator}
+  - {from: idea_evaluator, to: idea_judge}
+  - {from: idea_judge, to: idea_saver, condition: accept}
+  - {from: idea_judge, to: idea_counter, condition: reject}
+  - {from: idea_saver, to: idea_counter}
+  - {from: idea_counter, to: result_export, condition: exit}
+  - {from: idea_counter, to: paper_retriever, condition: continue, backtrack: true}

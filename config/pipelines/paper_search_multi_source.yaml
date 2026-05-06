@@ -1,0 +1,262 @@
+name: paper_search_multi_source
+# 多源并行搜索 pipeline。每条分支独立完成，独立持久化到文件夹。
+# 不解析 PDF，不写 papers.db。所有产物用 paper_id 作为 key 关联。
+#
+# 用法：
+#   1) 改 config.domain / keywords / year_from / year_to / max_papers_per_source 即可换领域。
+#   2) 关掉某条分支 = 删它的 node + edges。
+#   3) 多领域并行 = 复制此文件改 domain，跑多次。
+
+config:
+  domain: "medicine"                       # 领域 hint，影响 OpenAlex concept 过滤等
+  keywords: ["GLP-1 receptor agonist", "semaglutide cardiovascular outcomes"]
+  year_from: 2023
+  year_to: 2026
+  max_papers_per_source: 100               # 每条分支最多收多少篇
+  fetch_references: true                   # persist 时拉引用列表
+  output_dir: "downloaded_papers/multi_search/medicine_glp1"
+  pdf_dir: "downloaded_papers/multi_search/medicine_glp1/pdfs"
+
+nodes:
+  # ---------- S2 分支 ----------
+  - id: s2_fetch
+    module: s2_summary
+    input_mapping:
+      keywords: config.keywords
+      domain: config.domain
+      year_from: config.year_from
+      year_to: config.year_to
+      max_papers: config.max_papers_per_source
+    output_mapping: { metadata: s2_metadata, source: s2_source }
+
+  - id: s2_pdf
+    module: pdf_download
+    depends_on: [s2_fetch]
+    params: { output_dir: config.pdf_dir }
+    input_mapping: { metadata: output.s2_fetch.metadata }
+    output_mapping: { results: s2_pdf_results }
+
+  - id: s2_persist
+    module: paper_search_persist
+    depends_on: [s2_pdf]
+    params:
+      output_dir: config.output_dir
+      fetch_references: config.fetch_references
+      source: s2
+    input_mapping:
+      metadata: output.s2_fetch.metadata
+      pdf_results: output.s2_pdf.results
+
+  # ---------- OpenAlex 分支 ----------
+  - id: openalex_fetch
+    module: openalex_summary
+    input_mapping:
+      keywords: config.keywords
+      domain: config.domain
+      year_from: config.year_from
+      year_to: config.year_to
+      max_papers: config.max_papers_per_source
+    output_mapping: { metadata: openalex_metadata }
+
+  - id: openalex_pdf
+    module: pdf_download
+    depends_on: [openalex_fetch]
+    params: { output_dir: config.pdf_dir }
+    input_mapping: { metadata: output.openalex_fetch.metadata }
+
+  - id: openalex_persist
+    module: paper_search_persist
+    depends_on: [openalex_pdf]
+    params:
+      output_dir: config.output_dir
+      fetch_references: config.fetch_references
+      source: openalex
+    input_mapping:
+      metadata: output.openalex_fetch.metadata
+      pdf_results: output.openalex_pdf.results
+
+  # ---------- Crossref 分支 ----------
+  - id: crossref_fetch
+    module: crossref_summary
+    input_mapping:
+      keywords: config.keywords
+      domain: config.domain
+      year_from: config.year_from
+      year_to: config.year_to
+      max_papers: config.max_papers_per_source
+    output_mapping: { metadata: crossref_metadata }
+
+  - id: crossref_pdf
+    module: pdf_download
+    depends_on: [crossref_fetch]
+    params: { output_dir: config.pdf_dir }
+    input_mapping: { metadata: output.crossref_fetch.metadata }
+
+  - id: crossref_persist
+    module: paper_search_persist
+    depends_on: [crossref_pdf]
+    params:
+      output_dir: config.output_dir
+      fetch_references: config.fetch_references
+      source: crossref
+    input_mapping:
+      metadata: output.crossref_fetch.metadata
+      pdf_results: output.crossref_pdf.results
+
+  # ---------- NCBI / PubMed 分支 ----------
+  - id: ncbi_fetch
+    module: ncbi_summary
+    input_mapping:
+      keywords: config.keywords
+      domain: config.domain
+      year_from: config.year_from
+      year_to: config.year_to
+      max_papers: config.max_papers_per_source
+    output_mapping: { metadata: ncbi_metadata }
+
+  - id: ncbi_pdf
+    module: pdf_download
+    depends_on: [ncbi_fetch]
+    params: { output_dir: config.pdf_dir }
+    input_mapping: { metadata: output.ncbi_fetch.metadata }
+
+  - id: ncbi_persist
+    module: paper_search_persist
+    depends_on: [ncbi_pdf]
+    params:
+      output_dir: config.output_dir
+      fetch_references: config.fetch_references
+      source: ncbi
+    input_mapping:
+      metadata: output.ncbi_fetch.metadata
+      pdf_results: output.ncbi_pdf.results
+
+  # ---------- bioRxiv / medRxiv 分支 ----------
+  - id: biorxiv_fetch
+    module: biorxiv_summary
+    input_mapping:
+      keywords: config.keywords
+      domain: config.domain
+      year_from: config.year_from
+      year_to: config.year_to
+      max_papers: config.max_papers_per_source
+    output_mapping: { metadata: biorxiv_metadata }
+
+  - id: biorxiv_pdf
+    module: pdf_download
+    depends_on: [biorxiv_fetch]
+    params: { output_dir: config.pdf_dir }
+    input_mapping: { metadata: output.biorxiv_fetch.metadata }
+
+  - id: biorxiv_persist
+    module: paper_search_persist
+    depends_on: [biorxiv_pdf]
+    params:
+      output_dir: config.output_dir
+      fetch_references: config.fetch_references
+      source: biorxiv
+    input_mapping:
+      metadata: output.biorxiv_fetch.metadata
+      pdf_results: output.biorxiv_pdf.results
+
+  # ---------- Europe PMC 分支 ----------
+  - id: europe_pmc_fetch
+    module: europe_pmc_summary
+    input_mapping:
+      keywords: config.keywords
+      domain: config.domain
+      year_from: config.year_from
+      year_to: config.year_to
+      max_papers: config.max_papers_per_source
+    output_mapping: { metadata: europe_pmc_metadata }
+
+  - id: europe_pmc_pdf
+    module: pdf_download
+    depends_on: [europe_pmc_fetch]
+    params: { output_dir: config.pdf_dir }
+    input_mapping: { metadata: output.europe_pmc_fetch.metadata }
+
+  - id: europe_pmc_persist
+    module: paper_search_persist
+    depends_on: [europe_pmc_pdf]
+    params:
+      output_dir: config.output_dir
+      fetch_references: config.fetch_references
+      source: europe_pmc
+    input_mapping:
+      metadata: output.europe_pmc_fetch.metadata
+      pdf_results: output.europe_pmc_pdf.results
+
+  # ---------- PLOS 分支 ----------
+  - id: plos_fetch
+    module: plos_summary
+    input_mapping:
+      keywords: config.keywords
+      domain: config.domain
+      year_from: config.year_from
+      year_to: config.year_to
+      max_papers: config.max_papers_per_source
+    output_mapping: { metadata: plos_metadata }
+
+  - id: plos_pdf
+    module: pdf_download
+    depends_on: [plos_fetch]
+    params: { output_dir: config.pdf_dir }
+    input_mapping: { metadata: output.plos_fetch.metadata }
+
+  - id: plos_persist
+    module: paper_search_persist
+    depends_on: [plos_pdf]
+    params:
+      output_dir: config.output_dir
+      fetch_references: config.fetch_references
+      source: plos
+    input_mapping:
+      metadata: output.plos_fetch.metadata
+      pdf_results: output.plos_pdf.results
+
+  # ---------- Springer 分支（化学/材料/工程友好） ----------
+  - id: springer_fetch
+    module: springer_summary
+    input_mapping:
+      keywords: config.keywords
+      domain: config.domain
+      year_from: config.year_from
+      year_to: config.year_to
+      max_papers: config.max_papers_per_source
+    output_mapping: { metadata: springer_metadata }
+
+  - id: springer_pdf
+    module: pdf_download
+    depends_on: [springer_fetch]
+    params: { output_dir: config.pdf_dir }
+    input_mapping: { metadata: output.springer_fetch.metadata }
+
+  - id: springer_persist
+    module: paper_search_persist
+    depends_on: [springer_pdf]
+    params:
+      output_dir: config.output_dir
+      fetch_references: config.fetch_references
+      source: springer
+    input_mapping:
+      metadata: output.springer_fetch.metadata
+      pdf_results: output.springer_pdf.results
+
+edges:
+  - {from: s2_fetch,         to: s2_pdf}
+  - {from: s2_pdf,           to: s2_persist}
+  - {from: openalex_fetch,   to: openalex_pdf}
+  - {from: openalex_pdf,     to: openalex_persist}
+  - {from: crossref_fetch,   to: crossref_pdf}
+  - {from: crossref_pdf,     to: crossref_persist}
+  - {from: ncbi_fetch,       to: ncbi_pdf}
+  - {from: ncbi_pdf,         to: ncbi_persist}
+  - {from: biorxiv_fetch,    to: biorxiv_pdf}
+  - {from: biorxiv_pdf,      to: biorxiv_persist}
+  - {from: europe_pmc_fetch, to: europe_pmc_pdf}
+  - {from: europe_pmc_pdf,   to: europe_pmc_persist}
+  - {from: plos_fetch,       to: plos_pdf}
+  - {from: plos_pdf,         to: plos_persist}
+  - {from: springer_fetch,   to: springer_pdf}
+  - {from: springer_pdf,     to: springer_persist}

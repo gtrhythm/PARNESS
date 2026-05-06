@@ -1,0 +1,82 @@
+name: pdf_parse_persist_layer_test
+description: "Smoke-test variant: 5 PDFs, isolated dirs, isolated PEK daemon."
+
+config:
+  max_rounds: 200
+  output_dir: "output/pdf_kit_parsed_test"
+
+nodes:
+  - id: pek_init
+    module: pek_start
+    params:
+      state_dir: "output/pek_daemon_test"
+    routes:
+      default: feeder
+
+  - id: feeder
+    module: pdf_queue_feeder
+    depends_on: [pek_init]
+    params:
+      pdf_list_path: "output/test_pdf_list_5.json"
+      state_dir: "output/test_pdf_queue_5"
+    routes:
+      has_next: parse_one
+      exhausted: pek_teardown
+
+  - id: parse_one
+    module: pek_parse
+    depends_on: [feeder]
+    input_mapping:
+      pdf_path: output.feeder.pdf_path
+      socket_path: output.pek_init.socket_path
+      output_dir: config.output_dir
+    params:
+      state_dir: "output/pek_daemon_test"
+      timeout_seconds: 600
+    routes:
+      default: parse_gate
+
+  - id: parse_gate
+    module: parse_result_gate
+    depends_on: [parse_one]
+    input_mapping:
+      parsed_papers: output.parse_one.parsed_papers
+      parse_errors: output.parse_one.parse_errors
+    routes:
+      success: id_allocate
+      fail: feeder
+
+  - id: id_allocate
+    module: paper_id_allocator
+    depends_on: [parse_gate]
+    input_mapping:
+      parsed_papers: output.parse_gate.parsed_papers
+    params:
+      db_path: "output/papers.db"
+    routes:
+      ok: pdf_move
+      skip: pdf_move
+      fail: feeder
+
+  - id: pdf_move
+    module: pdf_mover
+    depends_on: [id_allocate]
+    input_mapping:
+      parsed_papers: output.parse_gate.parsed_papers
+    params:
+      source_root: "downloaded_papers"
+      target_root: "output/parsedpaper_test"
+    routes:
+      default: feeder
+
+  - id: pek_teardown
+    module: pek_stop
+    depends_on: [feeder]
+    params:
+      state_dir: "output/pek_daemon_test"
+      grace_seconds: 30
+    routes:
+      default: done
+
+  - id: done
+    depends_on: [pek_teardown]

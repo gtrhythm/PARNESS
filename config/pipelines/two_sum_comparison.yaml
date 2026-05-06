@@ -1,0 +1,91 @@
+name: two_sum_comparison
+config:
+  ideas:
+    - title: "Two-Sum 问题：哈希表 vs 暴力法性能对比"
+      description: >
+        LeetCode经典第一题Two-Sum的两种解法对比。暴力法双重循环O(n^2)时间O(1)空间，
+        哈希表法一次遍历O(n)时间O(n)空间。实验在不同数组规模(100-1000000)和数据分布
+        （随机、递增、含重复、全相同）下对比两种方法的运行时间和内存消耗，
+        验证空间换时间策略在不同场景下的实际效果。
+      category: "algorithm"
+      novelty_score: 2.5
+      feasibility_score: 9.8
+      impact_score: 2.0
+  idea:
+    title: "Two-Sum 问题：哈希表 vs 暴力法性能对比"
+    description: >
+      对比Two-Sum问题的两种经典解法：暴力法O(n^2)时间O(1)空间，
+      哈希表法O(n)时间O(n)空间。在不同数组规模和数据分布下测量
+      运行时间和内存消耗，验证空间换时间策略的实际效果。
+    category: "algorithm"
+    novelty_score: 2.5
+    feasibility_score: 9.8
+    impact_score: 2.0
+  idea_text: "对比Two-Sum问题的两种解法：暴力双重循环O(n^2)时间O(1)空间，哈希表一次遍历O(n)时间O(n)空间。实验在数组规模100-1000000、数据分布（随机、递增、含重复、全相同）下对比运行时间和内存消耗，验证空间换时间策略的实际效果。"
+  idea_title: "Two-Sum 问题：哈希表 vs 暴力法性能对比"
+  topic: "算法复杂度分析"
+
+nodes:
+  - id: idea_evaluation
+    module: idea_evaluator
+    input_mapping:
+      ideas: config.ideas
+    output_mapping:
+      evaluations: evaluated_ideas
+      ranked_ideas: ranked_ideas
+      summary: evaluation_summary
+
+  - id: experiment_plan
+    module: experiment_plan_generator
+    depends_on: [idea_evaluation]
+    input_mapping:
+      content: config.idea_text
+    output_mapping:
+      experiment_plan: experiment_plan
+
+  - id: experiment_report
+    module: experiment_report_generator
+    depends_on: [experiment_plan]
+    input_mapping:
+      idea: config.idea_text
+      experiment_plan: output.experiment_plan.experiment_plan
+      experiment_results: output.experiment_plan.experiment_plan
+    output_mapping:
+      report: experiment_report
+
+  - id: paper_writing
+    module: paper_writer
+    depends_on: [experiment_report]
+    input_mapping:
+      title: config.idea_title
+      idea: config.idea
+      experiment_results: output.experiment_report.report
+    output_mapping:
+      draft: paper_draft
+
+  - id: paper_review
+    module: paper_reviewer
+    depends_on: [paper_writing]
+    input_mapping:
+      paper_content: output.paper_writing.draft
+    output_mapping:
+      overall_score: review_score
+      summary: review_summary
+      critiques: review_critiques
+
+  - id: paper_revision
+    module: paper_editor
+    depends_on: [paper_review, paper_writing]
+    input_mapping:
+      paper_draft: output.paper_writing.draft
+      review_comments: output.paper_review.critiques
+    output_mapping:
+      revised_draft: final_paper
+
+edges:
+  - {from: idea_evaluation, to: experiment_plan}
+  - {from: experiment_plan, to: experiment_report}
+  - {from: experiment_report, to: paper_writing}
+  - {from: paper_writing, to: paper_review}
+  - {from: paper_review, to: paper_revision, condition: success}
+  - {from: paper_review, to: paper_writing, condition: failed}

@@ -1,0 +1,46 @@
+name: experiment_only
+config:
+  idea_id: ""
+  idea_title: ""
+  idea_description: ""
+  timeout_seconds: 3600
+  max_retries: 3
+  task_type: "classification"
+
+nodes:
+  - id: experiment_design
+    module: experiment_plan_generator
+    input_mapping:
+      content: config.idea_description
+    output_mapping:
+      experiment_plan: designed_experiments
+
+  - id: code_execution
+    module: experiment_runner
+    depends_on: [experiment_design]
+    input_mapping:
+      designed_experiments: output.experiment_design.experiment_plan
+      idea_id: config.idea_id
+      idea_title: config.idea_title
+      idea_description: config.idea_description
+    output_mapping:
+      experiment_results: experiment_results
+      execution_metrics: execution_metrics
+      best_result: best_experiment_result
+      summary: execution_summary
+
+  - id: evaluation
+    module: experiment_evaluator
+    depends_on: [code_execution]
+    input_mapping:
+      experiment_results: output.code_execution.experiment_results
+      task_type: config.task_type
+    output_mapping:
+      evaluation_metrics: evaluation_metrics
+      evaluation_report: evaluation_report
+      comparison_with_baseline: baseline_comparison
+      summary: eval_summary
+
+edges:
+  - {from: experiment_design, to: code_execution}
+  - {from: code_execution, to: evaluation}

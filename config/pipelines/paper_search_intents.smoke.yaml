@@ -1,0 +1,13 @@
+# Smoke variant of paper_search_intents.yaml: 1 intent, small max, no PDF.
+# Used by smoke tests to exercise the full DAG runner cheaply.
+config:
+  year_from: 2024
+  year_to: 2026
+  max_papers_per_intent: 2
+  fetch_references: true
+  output_dir: "/tmp/_paper_search_smoke_dag"
+  pdf_dir: "/tmp/_paper_search_smoke_dag/_pdf_staging"
+
+intents:
+  - {tag: smoke_protein_lm, domain: bio,
+     keyword: "protein language model"}

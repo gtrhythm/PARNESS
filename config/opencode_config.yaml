@@ -1,0 +1,17 @@
+server:
+  host: "127.0.0.1"
+  port: 4096
+  url: "http://127.0.0.1:4096"
+  auto_start: false
+  shutdown_on_pipeline_end: true
+
+workspace:
+  base_dir: "output/opencode_workspaces"
+  cleanup_after_success: false
+  cleanup_after_days: 7
+
+execution:
+  default_model: ""
+  default_agent: "build"
+  format: "json"
+  timeout_seconds: 3600

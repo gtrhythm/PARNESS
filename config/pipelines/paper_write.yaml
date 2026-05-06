@@ -1,0 +1,40 @@
+name: paper_write
+config:
+  title: ""
+  target_venue: ""
+  idea: {}
+  results: {}
+
+nodes:
+  - id: paper_writing
+    module: paper_writer
+    input_mapping:
+      title: config.title
+      idea: config.idea
+      experiment_results: config.results
+    output_mapping:
+      draft: paper_draft
+
+  - id: paper_review
+    module: paper_reviewer
+    depends_on: [paper_writing]
+    input_mapping:
+      paper_content: output.paper_writing.draft
+    output_mapping:
+      overall_score: review_score
+      summary: review_summary
+
+  - id: paper_revision
+    module: paper_editor
+    depends_on: [paper_review]
+    input_mapping:
+      paper_draft: output.paper_writing.draft
+      review_comments: output.paper_review.summary
+    output_mapping:
+      revised_draft: final_paper
+      summary: revision_summary
+
+edges:
+  - {from: paper_writing, to: paper_review}
+  - {from: paper_review, to: paper_revision, condition: success}
+  - {from: paper_review, to: paper_writing, condition: failed}

@@ -1,0 +1,139 @@
+name: pdf_parsed_persist_pipeline
+description: "Re-ingest already-parsed PDFs (output/pdf_kit_parsed_past/{paper_id}/) one at a time:
+  load existing parse → extract title from MD headings (3x consensus LLM) →
+  search summary by title → align ids → persist parse + summary. Loops back on any failure."
+
+config:
+  max_rounds: 4000
+  parsed_root: "output/pdf_kit_parsed_past"
+  state_dir: "output/parsed_folder_queue"
+  db_path: "output/papers.db"
+  figures_base_dir: "output/figures"
+
+nodes:
+  # ── Dispatch one already-parsed folder at a time ──
+  - id: feeder
+    module: parsed_folder_feeder
+    params:
+      parsed_root: "output/pdf_kit_parsed_past"
+      state_dir: "output/parsed_folder_queue"
+      skip_persisted_db: "output/papers.db"
+    routes:
+      has_next: load_parsed
+      exhausted: done
+
+  # ── Load JSON + MD from the dispatched folder ──
+  - id: load_parsed
+    module: parsed_folder_loader
+    depends_on: [feeder]
+    input_mapping:
+      folder_path: output.feeder.folder_path
+      paper_id: output.feeder.paper_id
+    routes:
+      default: parse_gate
+
+  # ── Reuse parse_result_gate to validate the loaded structure ──
+  - id: parse_gate
+    module: parse_result_gate
+    depends_on: [load_parsed]
+    input_mapping:
+      parsed_papers: output.load_parsed.parsed_papers
+      parse_errors: output.load_parsed.parse_errors
+    routes:
+      success: extract_title
+      fail: feeder
+
+  # ── Extract title from Markdown headings only, with 3x consensus ──
+  - id: extract_title
+    module: title_extractor
+    depends_on: [parse_gate]
+    input_mapping:
+      papers: output.load_parsed.parsed_papers
+    params:
+      headings_only: true
+      consensus_n: 3
+      max_retries: 6
+      max_concurrent: 1
+    routes:
+      default: title_gate
+
+  # ── Validate title extraction ──
+  - id: title_gate
+    module: title_result_gate
+    depends_on: [extract_title]
+    input_mapping:
+      titles: output.extract_title.titles
+      paper_id: output.parse_gate.paper_id
+    routes:
+      success: persist_title
+      fail: feeder
+
+  # ── Persist the validated title to <folder>/title.md ──
+  - id: persist_title
+    module: title_persist
+    depends_on: [title_gate]
+    input_mapping:
+      folder_path: output.feeder.folder_path
+      title: output.title_gate.validated_title
+      paper_id: output.parse_gate.paper_id
+    routes:
+      default: search_summary
+
+  # ── Search summary by title (multi-source fallback) ──
+  - id: search_summary
+    module: paper_summary_search
+    depends_on: [persist_title]
+    input_mapping:
+      title: output.title_gate.validated_title
+    routes:
+      default: summary_gate
+
+  # ── Validate summary search result ──
+  - id: summary_gate
+    module: summary_result_gate
+    depends_on: [search_summary]
+    input_mapping:
+      metadata: output.search_summary.metadata
+      source: output.search_summary.source
+      paper_id: output.parse_gate.paper_id
+    routes:
+      success: id_align
+      fail: feeder
+
+  # ── Align search paper_id with our local paper_id ──
+  - id: id_align
+    module: id_align_gate
+    depends_on: [summary_gate]
+    input_mapping:
+      metadata: output.summary_gate.metadata
+      paper_id: output.parse_gate.paper_id
+    routes:
+      default: persist_parse
+
+  # ── Persist sections / tables / images / formulas ──
+  - id: persist_parse
+    module: pdf_kit_parse_persist
+    depends_on: [id_align]
+    input_mapping:
+      parsed_papers: output.load_parsed.parsed_papers
+    params:
+      db_path: "output/papers.db"
+      figures_base_dir: "output/figures"
+    routes:
+      default: persist_summary
+
+  # ── Persist summary metadata (title, abstract, authors, ...) ──
+  - id: persist_summary
+    module: summary_persist
+    depends_on: [persist_parse]
+    input_mapping:
+      metadata: output.id_align.metadata
+      source: output.search_summary.source
+    params:
+      db_path: "output/papers.db"
+    routes:
+      default: feeder
+
+  # ── Terminal node ──
+  - id: done
+    depends_on: [feeder]

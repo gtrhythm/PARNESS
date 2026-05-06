@@ -1,0 +1,75 @@
+embedding:
+  provider: "ollama"
+  model: "qwen3-embedding:4b"
+  dimension: 2560
+  max_tokens: 8192
+  ollama_base_url: "http://localhost:11434"
+  enable_abstract_summary: true
+
+extraction:
+  max_raw_tokens: 8000
+  chunk_min_chars: 30
+  chunk_max_chars: 500
+
+indexing:
+  link_threshold: 0.65
+  top_k_search: 20
+  max_candidates_vector: 8
+  max_candidates_struct: 4
+  max_edges_per_node: 20
+  min_confidence: 0.6
+  enable_retrospect: true
+  max_retrospect_pairs: 8
+
+random_walk:
+  enabled: true
+  num_walks: 20
+  max_steps: 5
+  stop_probability: 0.1
+  min_walk_freq: 0.15
+  max_candidates: 6
+  struct_weight: 1.0
+  semantic_weight_scale: 1.0
+
+query:
+  dedup_threshold: 0.92
+  search_multiplier: 2
+  search_abstract: true
+
+pruning:
+  max_edges_per_node: 20
+  min_weight: 0.3
+  decay_factor: 0.95
+  decay_min_weight: 0.1
+  protected_relations:
+    - "SAME_SOURCE_PAPER"
+    - "CITES"
+    - "NEXT_SECTION"
+    - "EXTRACTED_FROM"
+    - "INSPIRED_BY"
+    - "EXTENDS"
+    - "TESTS_IDEA"
+    - "IMPLEMENTS"
+    - "CROSS_DOMAIN"
+    - "SUPPORTS"
+    - "REFUTES"
+    - "SAME_SEED_CLUSTER"
+    - "BASED_ON_INSIGHT"
+    - "EXPLORATION_OF"
+    - "ROUND_OF"
+    - "METRIC_OF"
+    - "SAME_SOURCE_IDEA"
+    - "SAME_SOURCE_EXPERIMENT"
+
+neo4j:
+  uri: "bolt://localhost:7687"
+  user: "neo4j"
+  password: ""
+  # Vector index dimension matches embedding.dimension above; the indexes
+  # `kgnode_embedding_vector` / `kgnode_abstract_embedding_vector` are created
+  # in init_schema() and back kNN search via db.index.vector.queryNodes.
+  embedding_dim: 2560
+
+rebuilding:
+  schedule: "0 3 * * *"
+  cache_extraction: true

@@ -1,0 +1,35 @@
+name: kg_abstract_enrichment
+description: "Enrich abstract-only paper by finding similar full-text papers"
+
+nodes:
+  - id: vector_search
+    module: kg_vector_search
+    params:
+      top_k: 20
+      search_abstract: true
+    input_mapping:
+      query: config.abstract
+
+  - id: graph_traverse
+    module: kg_graph_traverse
+    depends_on: [vector_search]
+    params:
+      max_hops: 3
+    input_mapping:
+      node_ids: output.vector_search.results
+
+  - id: enrich
+    module: kg_abstract_enrich
+    depends_on: [vector_search, graph_traverse]
+    input_mapping:
+      abstract: config.abstract
+      top_k: 10
+      max_hops: 3
+
+  - id: synthesize
+    module: kg_synthesize
+    depends_on: [enrich]
+    input_mapping:
+      seed_idea: config.idea
+      max_depth: 5
+      strategy: "cross_domain"

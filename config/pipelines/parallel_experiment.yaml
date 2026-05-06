@@ -1,0 +1,91 @@
+name: parallel_experiment
+config:
+  topic: ""
+  title: ""
+  idea: {}
+  idea_threshold: 0.7
+  parallel_branch_count: 3
+
+nodes:
+  - id: idea_generation
+    module: idea_generator
+    input_mapping:
+      innovations: innovations
+      references: references
+      task_domain: config.topic
+    output_mapping:
+      ideas: generated_ideas
+      report: idea_report
+
+  - id: idea_evaluation
+    module: idea_evaluator
+    depends_on: [idea_generation]
+    input_mapping:
+      ideas: output.idea_generation.ideas
+    output_mapping:
+      evaluations: evaluated_ideas
+      summary: evaluation_summary
+
+  - id: parallel_exploration
+    module: experiment_plan_generator
+    depends_on: [idea_evaluation]
+    input_mapping:
+      content: output.idea_evaluation.evaluated_ideas
+    output_mapping:
+      experiment_plan: parallel_results
+
+  - id: branch_ablation
+    module: experiment_plan_generator
+    depends_on: [parallel_exploration]
+    input_mapping:
+      content: output.idea_evaluation.evaluated_ideas
+      content_type: ablation
+    output_mapping:
+      experiment_plan: ablation_experiments
+
+  - id: branch_baselines
+    module: experiment_plan_generator
+    depends_on: [parallel_exploration]
+    input_mapping:
+      content: output.idea_evaluation.evaluated_ideas
+      content_type: baseline_comparison
+    output_mapping:
+      experiment_plan: baseline_experiments
+
+  - id: branch_scaling
+    module: experiment_plan_generator
+    depends_on: [parallel_exploration]
+    input_mapping:
+      content: output.idea_evaluation.evaluated_ideas
+      content_type: scaling_analysis
+    output_mapping:
+      experiment_plan: scaling_experiments
+
+  - id: result_aggregation
+    module: experiment_report_generator
+    depends_on: [parallel_exploration]
+    input_mapping:
+      experiment_results:
+        ablation: output.branch_ablation.ablation_experiments
+        baseline: output.branch_baselines.baseline_experiments
+        scaling: output.branch_scaling.scaling_experiments
+    output_mapping:
+      report: aggregated_results
+
+  - id: paper_writing
+    module: paper_writer
+    depends_on: [result_aggregation]
+    input_mapping:
+      title: config.title
+      idea: config.idea
+      experiment_results: output.result_aggregation.aggregated_results
+      ablation_study: output.branch_ablation.experiment_plan
+      baseline_comparison: output.branch_baselines.experiment_plan
+    output_mapping:
+      draft: paper_draft
+
+edges:
+  - {from: idea_generation, to: idea_evaluation}
+  - {from: idea_evaluation, to: parallel_exploration}
+  - {from: parallel_exploration, to: result_aggregation}
+  - {from: result_aggregation, to: paper_writing}

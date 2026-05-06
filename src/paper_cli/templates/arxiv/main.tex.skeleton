@@ -1,0 +1,136 @@
+% ============================================================================
+%  arxiv-style paper skeleton — populated by an opencode session.
+%
+%  Compile via:  POST $LATEX_SERVICE_URL/compile  (zip with arxiv.sty + figs/ + refs.bib)
+%  Service runs `latexmk -xelatex` only — no bibtex stage. Bibliography MUST be
+%  inline thebibliography (see skills/latex-compile-fix.md §bbl).
+% ============================================================================
+
+\documentclass{article}
+\usepackage{arxiv}
+
+% ---------- xelatex-friendly fonts (matches arxiv.sty's ptm/phv hints)
+\usepackage{fontspec}
+\setmainfont{TeX Gyre Termes}
+\setsansfont{TeX Gyre Heros}
+\setmonofont{TeX Gyre Cursor}
+
+% ---------- Core math + symbols
+\usepackage{amsmath, amssymb, amsthm, mathtools, amsfonts}
+
+% ---------- Typography helpers
+\usepackage{microtype, enumitem}
+
+% ---------- Tables, figures, code
+\usepackage{graphicx, booktabs, array, tabularx, multirow, caption}
+\captionsetup{font=small, labelfont=bf}
+\usepackage{xcolor, listings}
+\lstset{
+  basicstyle=\ttfamily\small, breaklines=true, columns=fullflexible,
+  frame=single, framesep=4pt, rulecolor=\color{gray!50}, showstringspaces=false,
+}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, shapes.geometric, shapes.symbols,
+                fit, backgrounds, calc, decorations.pathreplacing}
+
+% ---------- Hyperref + URL
+\usepackage{url, hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  citecolor=blue!50!black,
+  urlcolor=blue!50!black,
+}
+
+% ---------- Multi-author block
+\usepackage{authblk}
+\renewcommand\Authfont{\bfseries}
+\setlength{\affilsep}{0em}
+
+% ---------- Custom commands
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+% ============================================================================
+\title{TITLE GOES HERE}
+
+\author[1]{Author One\thanks{Corresponding author. \texttt{author1@example.org}}}
+\author[1]{Author Two}
+\affil[1]{Affiliation Name, City, Country}
+
+\renewcommand{\shorttitle}{Short Title Here}
+
+\hypersetup{
+  pdftitle={Title goes here},
+  pdfauthor={Author One, Author Two},
+  pdfkeywords={keyword1, keyword2, keyword3},
+}
+
+\date{\today}
+
+% ============================================================================
+\begin{document}
+\maketitle
+
+% ----------------------------------------------------------------------------
+\begin{abstract}
+\noindent
+ABSTRACT GOES HERE — single paragraph, 150--250 words, no citations.
+State the problem, the contribution, and the headline result.
+\end{abstract}
+
+\keywords{keyword1 \and keyword2 \and keyword3}
+
+% ============================================================================
+\section{Introduction}
+\label{sec:intro}
+
+INTRODUCTION GOES HERE. Target 600--900 words. Mention prior systems with
+\verb|[CITE: <topic>]| markers; the citation pass will resolve them.
+
+% ============================================================================
+\section{Related Work}
+\label{sec:related}
+
+RELATED WORK GOES HERE. Target 300--500 words. Cluster prior work into 2--3
+themes with \verb|[CITE: ...]| markers per claim.
+
+% ============================================================================
+\section{Method}
+\label{sec:method}
+
+METHOD GOES HERE. Target 1000--1800 words. Place 1--2 figures with
+\verb|[FIGURE: <description>]| markers. Use \verb|\label{fig:...}| and
+\verb|\ref{fig:...}| for cross-references.
+
+% ============================================================================
+\section{Experiments}
+\label{sec:exp}
+
+EXPERIMENTS GO HERE. Target 600--1000 words. Tables (booktabs) for numbers;
+matplotlib pdf in \verb|figs/| for any plot.
+
+% ============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+CONCLUSION GOES HERE. Target 100--200 words. State the takeaway and one
+sentence on future work.
+
+% ============================================================================
+% Inline bibliography. The LaTeX service runs latexmk only (no bibtex stage),
+% so \bibliography{refs} would render as [?] everywhere. Keep entries inline
+% here. Also keep refs.bib in sync for portability — every \bibitem here
+% should have a matching @article/@inproceedings entry in refs.bib.
+% ============================================================================
+\begin{thebibliography}{99}
+
+% Citation pass inserts \bibitem entries here.
+% Format:
+%   \bibitem{key}
+%   FirstAuthor, SecondAuthor, ThirdAuthor.
+%   \newblock Title of the Paper.
+%   \newblock \emph{Venue}, Year.
+
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,79 @@
+name: pdf_parse_refs
+description: |
+  Parse 220 reference PDFs from pipeline_searched_papers_with_pdf_and_summary/pdfs/
+  into output/refs_parsed/<s2_sha1>/, naming aligned with the existing
+  summaries/<s2_sha1>.json and references/<s2_sha1>.json so any tool can look
+  up all three artifacts by the same key.
+
+  Single-purpose pipeline:
+    * NO id allocation (no DB writes)
+    * NO title extraction
+    * NO summary search (summaries already exist on disk)
+    * NO PDF moving (originals stay in pdfs/)
+  Just PEK parse → folder of structured outputs.
+
+config:
+  max_rounds: 5000
+  output_dir: "output/refs_parsed"
+
+nodes:
+  # ── Cold-start a dedicated PEK daemon for this batch ─────────────
+  - id: pek_init
+    module: pek_start
+    params:
+      state_dir: "output/pek_daemon_refs"
+    routes:
+      default: feeder
+
+  # ── Dispatch one PDF at a time from the pre-generated list ──────
+  - id: feeder
+    module: pdf_queue_feeder
+    depends_on: [pek_init]
+    params:
+      pdf_list_path: "output/refs_pdf_list.json"
+      state_dir: "output/refs_pdf_queue"
+    routes:
+      has_next: parse_one
+      exhausted: pek_teardown
+
+  # ── Parse via daemon RPC ────────────────────────────────────────
+  # pek_parse auto-creates output_dir/<pdf_stem>/ — so a PDF named
+  # s2_2212f43a131929c88914ad3c51b7f82ec3f63c0c.pdf gets parsed into
+  # output/refs_parsed/s2_2212f43a131929c88914ad3c51b7f82ec3f63c0c/
+  # which mirrors summaries/s2_2212...c0c.json exactly.
+  - id: parse_one
+    module: pek_parse
+    depends_on: [feeder]
+    input_mapping:
+      pdf_path: output.feeder.pdf_path
+      socket_path: output.pek_init.socket_path
+      output_dir: config.output_dir
+    params:
+      state_dir: "output/pek_daemon_refs"
+      timeout_seconds: 1800
+    routes:
+      default: parse_gate
+
+  # ── Both success and fail loop straight back to feeder ──────────
+  - id: parse_gate
+    module: parse_result_gate
+    depends_on: [parse_one]
+    input_mapping:
+      parsed_papers: output.parse_one.parsed_papers
+      parse_errors: output.parse_one.parse_errors
+    routes:
+      success: feeder
+      fail: feeder
+
+  # ── Stop the daemon when queue is exhausted ─────────────────────
+  - id: pek_teardown
+    module: pek_stop
+    depends_on: [feeder]
+    params:
+      state_dir: "output/pek_daemon_refs"
+      grace_seconds: 30
+    routes:
+      default: done
+
+  - id: done
+    depends_on: [pek_teardown]

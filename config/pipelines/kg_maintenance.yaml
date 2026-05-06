@@ -1,0 +1,10 @@
+name: kg_maintenance
+description: "Knowledge Graph maintenance: prune edges"
+
+nodes:
+  - id: prune
+    module: kg_prune
+    params:
+      max_edges_per_node: 20
+      min_weight: 0.3
+      dry_run: false

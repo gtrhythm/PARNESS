@@ -1,0 +1,389 @@
+name: auto_paper_e2e_opencode
+
+# ============================================================================
+#  Read paper(s) → idea → experiment design → opencode runs experiment →
+#  opencode (paper_cli) writes paper + compiles PDF.
+#
+#  This pipeline differs from auto_idea_to_paper.yaml on **two** points:
+#    (1) Phase 4 paper writing is delegated to paper_cli (opencode session) via
+#        a new `paper_cli_runner` adapter — replaces the old
+#        paper_writer + paper_md_assembler + chart_code_generator chain.
+#    (2) Every LLM-driven node has an explicit token budget annotated below,
+#        so the whole flow stays within MiniMax M2.7's 200k context limit.
+#
+#  Phase 3 already uses opencode (existing `experiment_executor_opencode`).
+#  Phase 1/2 are proven adapters from auto_idea_to_paper.yaml — reused as-is.
+#
+#  STATUS: design draft. The `paper_cli_runner` adapter is **not yet
+#  implemented** (TODO marker on the node). Run with --skip-phase4 until it lands.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+#  Context budget breakdown (all ceilings well below 200k tokens)
+# ----------------------------------------------------------------------------
+#  Stage                              max tokens (input)   notes
+#  ---------------------------------- -------------------- --------------------
+#  paper_summary (per paper)          ~120k                raw paper → 5k digest
+#  summary_accumulator                bookkeeping only     no LLM call
+#  idea_evolution                     ~165k                30 digests × 5k +
+#                                                          8k previous_ideas +
+#                                                          ~2k prompt
+#  idea_evaluator                     ~60k                 N ideas × ~2k each
+#  best_idea_selector                 deterministic        no LLM call
+#  experiment_plan_generator          ~12k                 idea + constraints +
+#                                                          fewshot
+#  experiment_executor_opencode       (own session, ~200k) opencode manages its
+#                                                          own context internally
+#  experiment_success_gate            ~20k                 plan + log tail
+#  experiment_plan_reviser            ~25k                 plan + failure log
+#  experiment_report_generator        ~30k                 results + idea
+#  paper_cli_runner                   (own session, ~200k) opencode manages its
+#                                                          own context per
+#                                                          AGENTS.md skills
+#
+#  Two budget hot-spots to watch in production:
+#    - idea_evolution: if avg digest grows above 5.5k, raise the per-paper
+#      `max_summary_tokens` cap or lower `target_count`.
+#    - experiment_plan_reviser: long failure logs bloat fast; if execution
+#      logs routinely exceed 15k, add a `log_tail_only: 200_lines` param.
+# ----------------------------------------------------------------------------
+
+config:
+  # Scale knobs (smaller than auto_idea_to_paper for end-to-end smoke).
+  max_idea_rounds: 2            # smoke validation; raise to 5+ for real runs
+  papers_per_merge: 3
+  ideas_per_round: 3
+  resource_constraint: "feasible on a single NVIDIA V100 32GB GPU"
+
+  # Storage
+  db_path: "output/papers.db"
+  output_dir: "output/auto_paper_e2e"
+  persist_file: "output/auto_paper_e2e/pipeline_state.jsonl"
+
+  # Iteration ceilings
+  score_threshold: 7.0
+  max_rounds: 200
+
+  # Token budgets (passed into nodes via input_mapping)
+  paper_summary_max_tokens: 5000
+  idea_evolution_max_digests: 30        # 30 × 5k = 150k input ceiling
+  experiment_plan_max_tokens: 12000
+
+  # Phase-4 paper writing (delegated to paper_cli/opencode)
+  paper_cli_model: "zai-coding-plan/glm-5.1"
+  paper_cli_timeout_min: 25
+  paper_cli_output_dir: "output/auto_paper_e2e/papers"
+
+  # Paper metadata (read by paper_cli_runner; written into the
+  # workspace's inputs/metadata.yaml). Per-idea title comes from
+  # best_selector.idea_title at runtime; the rest are pipeline-wide.
+  paper_metadata:
+    authors:
+      - name: "Auto Paper Machine"
+        email: "auto@example.org"
+        corresponding: true
+        affiliation_id: 1
+    affiliations:
+      - id: 1
+        name: "Auto Paper Machine"
+        location: "—"
+    target_venue: "arXiv preprint"
+    keywords:
+      - automated research
+      - LLM agents
+
+nodes:
+  # ============================================================
+  # Phase 1: Iterative Idea Generation (5 rounds × 3 papers)
+  # ============================================================
+
+  - id: paper_retriever
+    module: paper_retriever
+    params:
+      db_path: "output/papers.db"
+      num_papers: 1
+
+  - id: paper_summary
+    module: paper_summary_agent
+    depends_on: [paper_retriever]
+    params:
+      max_summary_tokens: 5000   # hard cap per paper digest
+    input_mapping:
+      paper: output.paper_retriever.papers
+
+  - id: accumulate
+    module: summary_accumulator
+    depends_on: [paper_summary]
+    params:
+      target_count: 3
+      state_file: "output/auto_paper_e2e/accumulator_state.json"
+    input_mapping:
+      summary: output.paper_summary.summary
+      key_innovations: output.paper_summary.key_innovations
+      open_problems: output.paper_summary.open_problems
+      transferable_techniques: output.paper_summary.transferable_techniques
+      paper_title: output.paper_summary.paper_title
+    routes:
+      need_more: paper_retriever
+      ready: idea_evolution
+
+  - id: idea_evolution
+    module: idea_evolution_agent
+    depends_on: [accumulate]
+    params:
+      ideas_per_round: 3
+      resource_constraint: "feasible on a single NVIDIA V100 32GB GPU"
+      max_digests_in_context: 30   # safety net; accumulate already caps at target_count
+    input_mapping:
+      merged_summaries: output.accumulate.merged_summaries
+      previous_ideas: output.accumulate.previous_ideas
+      resource_constraint: config.resource_constraint
+
+  - id: round_control
+    module: round_controller
+    depends_on: [idea_evolution]
+    params:
+      max_rounds: 2                # smoke validation; raise for real runs
+      state_file: "output/auto_paper_e2e/round_state.json"
+      accumulator_state_file: "output/auto_paper_e2e/accumulator_state.json"
+    input_mapping:
+      ideas: output.idea_evolution.ideas
+    routes:
+      continue: paper_retriever
+      exit: idea_scoring
+
+  # ============================================================
+  # Phase 2: Idea Scoring & Best Selection
+  # ============================================================
+
+  - id: idea_scoring
+    module: idea_evaluator
+    depends_on: [round_control]
+    input_mapping:
+      ideas: output.round_control.ideas
+    output_mapping:
+      ranked_ideas: scored_ideas
+
+  - id: best_selector
+    module: best_idea_selector
+    depends_on: [idea_scoring]
+    input_mapping:
+      ranked_ideas: output.idea_scoring.scored_ideas
+
+  # ============================================================
+  # Phase 3: Experiment Plan + opencode Execution + Retry Gate
+  # ============================================================
+
+  - id: experiment_plan
+    module: experiment_plan_generator
+    depends_on: [best_selector]
+    params:
+      max_plan_tokens: 12000
+    input_mapping:
+      content: output.best_selector.idea_description
+
+  - id: experiment_exec
+    module: experiment_runner_cli
+    depends_on: [experiment_plan, best_selector]
+    params:
+      timeout_min: 60
+      output_dir: "output/auto_paper_e2e/experiments"
+      model: "zai-coding-plan/glm-5.1"
+      # opencode session manages its own context within this attempt;
+      # the pipeline only passes plan + idea + resource_constraint.
+    input_mapping:
+      experiment_plan:     output.experiment_plan.experiment_plan
+      idea:                output.best_selector.best_idea
+      resource_constraint: config.resource_constraint
+
+  - id: experiment_verify
+    module: experiment_verifier_cli
+    depends_on: [experiment_exec, experiment_plan]
+    params:
+      timeout_min: 10
+      output_dir: "output/auto_paper_e2e/verifications"
+      # zai-coding-plan/glm-5.1 (200k context, single-provider auth);
+      # opencode/minimax-m2.7 was the original pick but requires
+      # opencode.ai billing setup we don't have.
+      model: "zai-coding-plan/glm-5.1"
+    input_mapping:
+      experiment_plan:  output.experiment_plan.experiment_plan
+      runner_workspace: output.experiment_exec.workspace
+
+  - id: experiment_gate
+    module: experiment_success_gate
+    depends_on: [experiment_verify, experiment_exec]
+    params:
+      max_retries: 3
+      state_file: "output/auto_paper_e2e/experiment_gate_state.json"
+    input_mapping:
+      experiment_results: output.experiment_exec.experiment_results
+      execution_log:      output.experiment_exec.execution_log
+      # gate uses 'success' for routing decision; verifier provides
+      # the authoritative judgement (pass/retry/fail mapped to success bool).
+      success:            output.experiment_verify.success
+    routes:
+      retry: experiment_exec          # backtrack-retry directly (matches
+                                      # auto_idea_to_paper.yaml pattern; the
+                                      # GraphRunner's backtrack only follows
+                                      # 1-hop retry edges reliably)
+      pass:  experiment_report
+      skip:  experiment_report        # accept partial results, move on
+
+  - id: experiment_report
+    module: experiment_report_generator
+    depends_on: [experiment_gate, experiment_exec, best_selector]
+    input_mapping:
+      experiment_results: output.experiment_exec.experiment_results
+      idea: output.best_selector.idea_description
+
+  # ============================================================
+  # Phase 4: Paper Writing via paper_cli (opencode)
+  # ============================================================
+  #
+  #   Replaces the old `paper_writer` + `paper_md_assembler` +
+  #   `chart_code_generator` chain. The paper_cli session handles:
+  #     - LaTeX drafting (skills/paper-writer.md)
+  #     - TikZ / matplotlib figures (skills/tikz-figure.md)
+  #     - S2 citation lookup + BibTeX (skills/s2-citation.md)
+  #     - Compile-fix loop (skills/latex-compile-fix.md)
+  #   …all inside one opencode session, so chart_gen is no longer a
+  #   separate stage.
+  #
+  #   `paper_cli_runner` is a NEW adapter — see TODO at bottom of file.
+
+  - id: paper_writer_opencode
+    module: paper_cli_runner
+    depends_on: [experiment_report, best_selector, experiment_exec]
+    params:
+      model: "zai-coding-plan/glm-5.1"
+      timeout_min: 25
+      output_dir: "output/auto_paper_e2e/papers"
+      latex_service_url: "http://localhost:9300"
+    input_mapping:
+      title:              output.best_selector.idea_title
+      idea:               output.best_selector.best_idea
+      experiment_report:  output.experiment_report.report
+      experiment_results: output.experiment_exec.experiment_results
+      paper_metadata:     config.paper_metadata
+    output_mapping:
+      pdf_path:    paper_pdf
+      workspace:   paper_workspace
+      run_id:      paper_run_id
+
+  # ============================================================
+  # Incremental Persistence Taps (no downstream, append-only jsonl)
+  # ============================================================
+
+  # Persist taps reference a specific field (validator requires
+  # node.field form). Each tap captures the most informative single output
+  # of its upstream node — the full payload is also reachable via the
+  # node's persistence_info if present.
+
+  - id: persist_summary
+    module: incremental_persistence
+    depends_on: [paper_summary]
+    params:
+      file_path: "output/auto_paper_e2e/pipeline_state.jsonl"
+      source: "paper_summary"
+    input_mapping:
+      data: output.paper_summary.summary
+
+  - id: persist_idea
+    module: incremental_persistence
+    depends_on: [idea_evolution]
+    params:
+      file_path: "output/auto_paper_e2e/pipeline_state.jsonl"
+      source: "idea_evolution"
+    input_mapping:
+      data: output.idea_evolution.ideas
+
+  - id: persist_scoring
+    module: incremental_persistence
+    depends_on: [idea_scoring]
+    params:
+      file_path: "output/auto_paper_e2e/pipeline_state.jsonl"
+      source: "idea_scoring"
+    input_mapping:
+      data: output.idea_scoring.scored_ideas
+
+  - id: persist_exp_plan
+    module: incremental_persistence
+    depends_on: [experiment_plan]
+    params:
+      file_path: "output/auto_paper_e2e/pipeline_state.jsonl"
+      source: "experiment_plan"
+    input_mapping:
+      data: output.experiment_plan.experiment_plan
+
+  - id: persist_exp_result
+    module: incremental_persistence
+    depends_on: [experiment_exec]
+    params:
+      file_path: "output/auto_paper_e2e/pipeline_state.jsonl"
+      source: "experiment_exec"
+    input_mapping:
+      data: output.experiment_exec.experiment_results
+
+  - id: persist_exp_report
+    module: incremental_persistence
+    depends_on: [experiment_report]
+    params:
+      file_path: "output/auto_paper_e2e/pipeline_state.jsonl"
+      source: "experiment_report"
+    input_mapping:
+      data: output.experiment_report.report
+
+  - id: persist_paper
+    module: incremental_persistence
+    depends_on: [paper_writer_opencode]
+    params:
+      file_path: "output/auto_paper_e2e/pipeline_state.jsonl"
+      source: "paper_writer_opencode"
+    input_mapping:
+      data: output.paper_writer_opencode.pdf_path
+
+# ============================================================================
+# Edges
+# ============================================================================
+edges:
+  # Phase 1 inner loop (paper digestion)
+  - {from: paper_retriever, to: paper_summary}
+  - {from: paper_summary, to: accumulate}
+  - {from: accumulate, to: paper_retriever, condition: need_more, backtrack: true}
+  - {from: accumulate, to: idea_evolution, condition: ready}
+
+  # Phase 1 outer loop (round-level)
+  - {from: idea_evolution, to: round_control}
+  - {from: round_control, to: paper_retriever, condition: continue, backtrack: true}
+  - {from: round_control, to: idea_scoring, condition: exit}
+
+  # Phase 2
+  - {from: idea_scoring, to: best_selector}
+
+  # Phase 3
+  - {from: best_selector, to: experiment_plan}
+  - {from: experiment_plan, to: experiment_exec}
+  - {from: experiment_exec, to: experiment_verify}
+  - {from: experiment_verify, to: experiment_gate}
+  - {from: experiment_gate, to: experiment_exec, condition: retry, backtrack: true}
+  - {from: experiment_gate, to: experiment_report, condition: pass}
+  - {from: experiment_gate, to: experiment_report, condition: skip}
+
+  # Phase 4
+  - {from: experiment_report, to: paper_writer_opencode}
+
+# ============================================================================
+# Operational notes
+# ============================================================================
+#
+# - All adapters used by this pipeline are registered. Validate with:
+#     python3 scripts/validate_pipeline.py config/pipelines/auto_paper_e2e_opencode.yaml
+#
+# - Phase 4 (paper_cli_runner) requires:
+#     - opencode CLI installed and authenticated for the chosen model
+#     - .env at repo root with S2_API_KEY  (auto-loaded by paper_cli)
+#     - LaTeX compiler service reachable at latex_service_url
+#
+# - To skip Phase 4 (debugging Phase 1–3 in isolation), comment out the
+#   paper_writer_opencode and persist_paper nodes plus the last edge.

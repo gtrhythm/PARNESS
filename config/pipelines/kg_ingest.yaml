@@ -1,0 +1,80 @@
+name: kg_ingest
+description: "Knowledge Graph incremental indexing — 8-phase pipeline"
+
+nodes:
+  - id: extract
+    module: kg_extract
+    input_mapping:
+      content: config.content
+      source_type: config.source_type
+      source_id: config.source_id
+
+  - id: dedup
+    module: kg_dedup
+    depends_on: [extract]
+    input_mapping:
+      units: output.extract.units
+      source_type: output.extract.source_type
+      source_id: output.extract.source_id
+
+  - id: embed
+    module: kg_embed
+    depends_on: [dedup]
+    input_mapping:
+      new_units: output.dedup.new_units
+      source_type: output.dedup.source_type
+      source_id: output.dedup.source_id
+
+  - id: write_node
+    module: kg_write_node
+    depends_on: [embed]
+    input_mapping:
+      embedded_units: output.embed.embedded_units
+      duplicate_units: output.dedup.duplicate_units
+      source_type: output.embed.source_type
+      source_id: output.embed.source_id
+
+  - id: build_internal_edge
+    module: kg_build_internal_edge
+    depends_on: [write_node]
+    input_mapping:
+      units: output.extract.units
+      source_type: output.extract.source_type
+      source_id: output.extract.source_id
+
+  - id: build_struct_edge
+    module: kg_build_struct_edge
+    depends_on: [write_node]
+    input_mapping:
+      new_node_ids: output.write_node.new_node_ids
+      source_type: output.write_node.source_type
+      source_id: output.write_node.source_id
+
+  - id: build_semantic_edge
+    module: kg_build_semantic_edge
+    depends_on: [build_struct_edge]
+    input_mapping:
+      new_node_ids: output.write_node.new_node_ids
+      struct_edge_count: output.build_struct_edge.struct_edge_count
+      source_type: output.write_node.source_type
+      source_id: output.write_node.source_id
+
+  - id: random_walk
+    module: kg_random_walk
+    depends_on: [build_semantic_edge]
+    input_mapping:
+      new_node_ids: output.write_node.new_node_ids
+      semantic_edge_count: output.build_semantic_edge.semantic_edge_count
+      source_type: output.write_node.source_type
+      source_id: output.write_node.source_id
+
+  - id: retrospect
+    module: kg_retrospect
+    depends_on: [random_walk]
+    input_mapping:
+      new_node_ids: output.write_node.new_node_ids
+      struct_edge_count: output.build_struct_edge.struct_edge_count
+      semantic_edge_count: output.build_semantic_edge.semantic_edge_count
+      walk_edge_count: output.random_walk.walk_edge_count
+      source_type: output.write_node.source_type
+      source_id: output.write_node.source_id

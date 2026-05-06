@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""Expand config/pipelines/paper_search_intents.yaml into a full pipeline yaml.
+
+Reads:    config/pipelines/paper_search_intents.yaml
+Writes:   config/pipelines/paper_search_multi_intent.yaml
+
+For every entry in `intents:`, emits one parallel branch:
+
+    s2_summary_<tag>  →  pdf_dl_<tag>  →  persist_<tag>
+
+Branches are independent — the DAG runner runs them in parallel via Kahn
+level scheduling. Each branch's persist node fires the moment its own
+fetch+pdf finish, so "whichever finishes first persists first" holds
+without any extra synchronization.
+
+Re-run this script every time intents.yaml is edited.
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_INTENTS = REPO_ROOT / "config/pipelines/paper_search_intents.yaml"
+DEFAULT_OUTPUT = REPO_ROOT / "config/pipelines/paper_search_multi_intent.yaml"
+
+
+def _validate_intent(intent: dict, idx: int) -> None:
+    for key in ("tag", "domain", "keyword"):
+        if not intent.get(key):
+            raise ValueError(
+                f"intent #{idx} missing required field '{key}': {intent}"
+            )
+    tag = intent["tag"]
+    if not all(c.isalnum() or c == "_" for c in tag):
+        raise ValueError(
+            f"intent #{idx} tag '{tag}' must contain only alphanumeric / underscore"
+        )
+
+
+def build_pipeline(intents_doc: dict) -> dict:
+    cfg = intents_doc.get("config") or {}
+    intents = intents_doc.get("intents") or []
+    if not intents:
+        raise ValueError("intents.yaml has no `intents:` entries")
+
+    year_from = cfg.get("year_from", 0)
+    year_to = cfg.get("year_to", 0)
+    max_papers = int(cfg.get("max_papers_per_intent", 20))
+    fetch_refs = bool(cfg.get("fetch_references", True))
+    output_dir = cfg.get("output_dir", "downloaded_papers/paper_search")
+    pdf_dir = cfg.get("pdf_dir", f"{output_dir}/_pdf_staging")
+
+    tags_seen = set()
+    nodes = []
+    edges = []
+
+    for idx, intent in enumerate(intents):
+        _validate_intent(intent, idx)
+        tag = intent["tag"]
+        if tag in tags_seen:
+            raise ValueError(f"duplicate tag '{tag}' at intent #{idx}")
+        tags_seen.add(tag)
+
+        domain = intent["domain"]
+        keyword = intent["keyword"]
+
+        sum_id = f"s2_summary_{tag}"
+        pdf_id = f"pdf_dl_{tag}"
+        per_id = f"persist_{tag}"
+
+        nodes.append({
+            "id": sum_id,
+            "module": "s2_summary",
+            "params": {
+                "keywords": [keyword],
+                "domain": domain,
+                "year_from": year_from,
+                "year_to": year_to,
+                "max_papers": max_papers,
+            },
+        })
+
+        nodes.append({
+            "id": pdf_id,
+            "module": "pdf_download",
+            "depends_on": [sum_id],
+            "params": {
+                "output_dir": pdf_dir,
+            },
+            "input_mapping": {
+                "metadata": f"output.{sum_id}.metadata",
+            },
+        })
+
+        nodes.append({
+            "id": per_id,
+            "module": "paper_search_persist",
+            "depends_on": [pdf_id],
+            "params": {
+                "output_dir": output_dir,
+                "fetch_references": fetch_refs,
+                "source": "s2",
+                "tag": tag,
+            },
+            "input_mapping": {
+                "metadata": f"output.{sum_id}.metadata",
+                "pdf_results": f"output.{pdf_id}.results",
+            },
+        })
+
+        edges.append({"from": sum_id, "to": pdf_id})
+        edges.append({"from": pdf_id, "to": per_id})
+
+    pipeline = {
+        "name": "paper_search_multi_intent",
+        "config": {
+            "year_from": year_from,
+            "year_to": year_to,
+            "max_papers_per_intent": max_papers,
+            "fetch_references": fetch_refs,
+            "output_dir": output_dir,
+            "pdf_dir": pdf_dir,
+            "intent_count": len(intents),
+        },
+        "nodes": nodes,
+        "edges": edges,
+    }
+    return pipeline
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", type=Path, default=DEFAULT_INTENTS,
+                        help="intents YAML to read")
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT,
+                        help="pipeline YAML to write")
+    args = parser.parse_args()
+
+    if not args.input.exists():
+        print(f"ERROR: missing {args.input}", file=sys.stderr)
+        return 1
+
+    intents_doc = yaml.safe_load(args.input.read_text(encoding="utf-8"))
+    pipeline = build_pipeline(intents_doc)
+
+    rel_input = args.input.relative_to(REPO_ROOT) if args.input.is_relative_to(REPO_ROOT) else args.input
+    header = (
+        "# AUTO-GENERATED by scripts/gen_paper_search_yaml.py\n"
+        f"# Source: {rel_input}\n"
+        "# DO NOT EDIT THIS FILE BY HAND. Edit intents.yaml then re-run the\n"
+        "# generator. Manual edits will be overwritten on next regeneration.\n"
+        f"# {len(pipeline['nodes'])} nodes / {len(pipeline['edges'])} edges / "
+        f"{pipeline['config']['intent_count']} intents.\n\n"
+    )
+
+    body = yaml.safe_dump(
+        pipeline,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+        width=120,
+    )
+    args.output.write_text(header + body, encoding="utf-8")
+
+    rel_output = args.output.relative_to(REPO_ROOT) if args.output.is_relative_to(REPO_ROOT) else args.output
+    print(
+        f"Wrote {rel_output}: "
+        f"{pipeline['config']['intent_count']} intents -> "
+        f"{len(pipeline['nodes'])} nodes, {len(pipeline['edges'])} edges."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

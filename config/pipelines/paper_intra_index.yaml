@@ -1,0 +1,30 @@
+name: paper_intra_index
+description: |
+  Build the intra-paper KG index for one paper. Decoupled DB / KG layout:
+  paper_db_reader is the ONLY node that touches papers.db (read-only); every
+  downstream node consumes the structured PaperBundle in memory.
+
+  Edges produced:
+    - mechanism (no LLM): SAME_SOURCE_PAPER, NEXT_SECTION, EXTRACTED_FROM,
+      IN_SECTION
+    - LLM round 1: sliding-window intra-paper, batched at 1/3 of model context
+    - LLM round 2: cross-batch stitching via top-K embedding neighbours,
+      auto-skipped when round 1 fits in a single batch
+
+nodes:
+  - id: read_paper
+    module: paper_db_reader
+    input_mapping:
+      paper_id: config.paper_id
+      db_path: config.db_path
+
+  - id: index_paper
+    module: paper_intra_index
+    depends_on: [read_paper]
+    input_mapping:
+      paper_id: output.read_paper.paper_id
+      paper_meta: output.read_paper.paper_meta
+      sections: output.read_paper.sections
+      tables: output.read_paper.tables
+      formulas: output.read_paper.formulas
+      images: output.read_paper.images

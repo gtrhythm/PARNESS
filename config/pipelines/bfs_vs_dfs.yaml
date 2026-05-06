@@ -1,0 +1,91 @@
+name: bfs_vs_dfs
+config:
+  ideas:
+    - title: "BFS vs DFS 最短路径搜索效率对比"
+      description: >
+        在无权图中，BFS保证找到最短路径而DFS不保证。本实验在随机生成的无向图上
+        对比BFS和DFS的搜索效率，包括访问节点数、路径长度、搜索时间。
+        图的规模从100到10000节点，密度从稀疏(边数=2*节点数)到稠密(边数=节点数*5)。
+        验证BFS在最短路径问题上的理论优势，以及DFS在内存消耗上的特点。
+      category: "algorithm"
+      novelty_score: 3.0
+      feasibility_score: 9.5
+      impact_score: 2.5
+  idea:
+    title: "BFS vs DFS 最短路径搜索效率对比"
+    description: >
+      在无权图中对比BFS和DFS的搜索效率。BFS保证最短路径但需要队列，
+      DFS不保证最短但栈开销更小。实验在不同图规模和密度下测量访问节点数、
+      路径长度和搜索时间，验证理论分析。
+    category: "algorithm"
+    novelty_score: 3.0
+    feasibility_score: 9.5
+    impact_score: 2.5
+  idea_text: "在无权图中对比BFS和DFS最短路径搜索效率。BFS用队列保证找到最短路径，DFS用栈遍历但不保证最短。实验在随机无向图上，节点规模100-10000，密度从稀疏到稠密，测量访问节点数、路径长度和搜索时间，验证BFS在最短路径上的理论优势以及DFS的内存特点。"
+  idea_title: "BFS vs DFS 最短路径搜索效率对比"
+  topic: "图搜索算法对比"
+
+nodes:
+  - id: idea_evaluation
+    module: idea_evaluator
+    input_mapping:
+      ideas: config.ideas
+    output_mapping:
+      evaluations: evaluated_ideas
+      ranked_ideas: ranked_ideas
+      summary: evaluation_summary
+
+  - id: experiment_plan
+    module: experiment_plan_generator
+    depends_on: [idea_evaluation]
+    input_mapping:
+      content: config.idea_text
+    output_mapping:
+      experiment_plan: experiment_plan
+
+  - id: experiment_report
+    module: experiment_report_generator
+    depends_on: [experiment_plan]
+    input_mapping:
+      idea: config.idea_text
+      experiment_plan: output.experiment_plan.experiment_plan
+      experiment_results: output.experiment_plan.experiment_plan
+    output_mapping:
+      report: experiment_report
+
+  - id: paper_writing
+    module: paper_writer
+    depends_on: [experiment_report]
+    input_mapping:
+      title: config.idea_title
+      idea: config.idea
+      experiment_results: output.experiment_report.report
+    output_mapping:
+      draft: paper_draft
+
+  - id: paper_review
+    module: paper_reviewer
+    depends_on: [paper_writing]
+    input_mapping:
+      paper_content: output.paper_writing.draft
+    output_mapping:
+      overall_score: review_score
+      summary: review_summary
+      critiques: review_critiques
+
+  - id: paper_revision
+    module: paper_editor
+    depends_on: [paper_review, paper_writing]
+    input_mapping:
+      paper_draft: output.paper_writing.draft
+      review_comments: output.paper_review.critiques
+    output_mapping:
+      revised_draft: final_paper
+
+edges:
+  - {from: idea_evaluation, to: experiment_plan}
+  - {from: experiment_plan, to: experiment_report}
+  - {from: experiment_report, to: paper_writing}
+  - {from: paper_writing, to: paper_review}
+  - {from: paper_review, to: paper_revision, condition: success}
+  - {from: paper_review, to: paper_writing, condition: failed}

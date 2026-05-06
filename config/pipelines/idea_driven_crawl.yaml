@@ -1,0 +1,68 @@
+name: idea_driven_crawl
+config:
+  idea: ""
+  domain: ""
+  max_keywords: 10
+  strategy: sequential
+  max_papers: 100
+  year_from: 2024
+  year_to: 2026
+  download_pdf: true
+  output_dir: "downloaded_papers/idea_driven"
+  db_path: "output/papers.db"
+
+nodes:
+  - id: extract_keywords
+    module: llm_keyword_provider
+    params:
+      max_keywords: 10
+    input_mapping:
+      content: config.idea
+      domain: config.domain
+    output_mapping:
+      keywords: candidate_keywords
+
+  - id: pick_keyword
+    module: keyword_selector
+    depends_on: [extract_keywords]
+    params:
+      strategy: sequential
+    input_mapping:
+      keywords: output.extract_keywords.candidate_keywords
+    output_mapping:
+      keyword: current_keyword
+
+  - id: crawl
+    module: crawl_orchestrator
+    depends_on: [pick_keyword]
+    input_mapping:
+      keyword: output.pick_keyword.keyword
+      domain: config.domain
+      year_from: config.year_from
+      year_to: config.year_to
+      max_papers: config.max_papers
+      download_pdf: config.download_pdf
+      output_dir: config.output_dir
+    output_mapping:
+      papers: crawled_papers
+      pdf_results: crawled_pdf_results
+
+  - id: persist_results
+    module: summary_persist
+    depends_on: [crawl]
+    params:
+      db_path: config.db_path
+    input_mapping:
+      metadata: output.crawl.crawled_papers
+      source: output.crawl.domain
+      domain: config.domain
+
+  - id: persist_downloads
+    module: pdf_download_persist
+    depends_on: [crawl]
+    params:
+      db_path: config.db_path
+    input_mapping:
+      results: output.crawl.crawled_pdf_results
+      metadata: output.crawl.crawled_papers
+      source: output.crawl.domain

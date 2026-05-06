@@ -1,0 +1,140 @@
+name: pdf_reparse_daemon_pipeline
+description: |
+  Same shape as pdf_reparse_pipeline, but parses PDFs through a long-running
+  PEK daemon. Models load once in pek_start, every iteration of the
+  feeder→parse_one→...→feeder loop reuses them via Unix-socket RPC, and
+  pek_stop tears the daemon down at the end.
+
+config:
+  output_dir: "output/pdf_kit_parsed"
+  db_path: "output/papers.db"
+  figures_base_dir: "output/figures"
+  pek_state_dir: "output/pek_daemon"
+
+nodes:
+  # ── Cold-start the daemon once ──
+  - id: pek_init
+    module: pek_start
+    params:
+      state_dir: "output/pek_daemon"
+    routes:
+      default: feeder
+
+  # ── Dispatch one PDF at a time ──
+  - id: feeder
+    module: pdf_queue_feeder
+    depends_on: [pek_init]
+    params:
+      pdf_list_path: "output/full_pdf_list.json"
+      state_dir: "output/pdf_queue"
+    routes:
+      has_next: parse_one
+      exhausted: pek_teardown
+
+  # ── Parse via daemon RPC (no model reload) ──
+  - id: parse_one
+    module: pek_parse
+    depends_on: [feeder]
+    input_mapping:
+      pdf_path: output.feeder.pdf_path
+      socket_path: output.pek_init.socket_path
+      output_dir: config.output_dir
+    params:
+      state_dir: "output/pek_daemon"
+      timeout_seconds: 600
+    routes:
+      default: parse_gate
+
+  # ── Gate: parse success? ──
+  - id: parse_gate
+    module: parse_result_gate
+    depends_on: [parse_one]
+    input_mapping:
+      parsed_papers: output.parse_one.parsed_papers
+      parse_errors: output.parse_one.parse_errors
+    routes:
+      success: extract_title
+      fail: feeder
+
+  # ── Title extraction ──
+  - id: extract_title
+    module: title_extractor
+    depends_on: [parse_gate]
+    input_mapping:
+      papers: output.parse_one.parsed_papers
+    routes:
+      default: title_gate
+
+  - id: title_gate
+    module: title_result_gate
+    depends_on: [extract_title]
+    input_mapping:
+      titles: output.extract_title.titles
+      paper_id: output.parse_gate.paper_id
+    routes:
+      success: search_summary
+      fail: feeder
+
+  # ── Summary search + persistence (unchanged from pdf_reparse_pipeline) ──
+  - id: search_summary
+    module: paper_summary_search
+    depends_on: [title_gate]
+    input_mapping:
+      title: output.title_gate.validated_title
+    routes:
+      default: summary_gate
+
+  - id: summary_gate
+    module: summary_result_gate
+    depends_on: [search_summary]
+    input_mapping:
+      metadata: output.search_summary.metadata
+      source: output.search_summary.source
+      paper_id: output.parse_gate.paper_id
+    routes:
+      success: id_align
+      fail: feeder
+
+  - id: id_align
+    module: id_align_gate
+    depends_on: [summary_gate]
+    input_mapping:
+      metadata: output.summary_gate.metadata
+      paper_id: output.parse_gate.paper_id
+    routes:
+      default: persist_parse
+
+  - id: persist_parse
+    module: pdf_kit_parse_persist
+    depends_on: [id_align]
+    input_mapping:
+      parsed_papers: output.parse_one.parsed_papers
+    params:
+      db_path: "output/papers.db"
+      figures_base_dir: "output/figures"
+    routes:
+      default: persist_summary
+
+  - id: persist_summary
+    module: summary_persist
+    depends_on: [persist_parse]
+    input_mapping:
+      metadata: output.id_align.metadata
+      source: output.search_summary.source
+    params:
+      db_path: "output/papers.db"
+    routes:
+      default: feeder
+
+  # ── Teardown daemon when queue is exhausted ──
+  - id: pek_teardown
+    module: pek_stop
+    depends_on: [feeder]
+    params:
+      state_dir: "output/pek_daemon"
+      grace_seconds: 30
+    routes:
+      default: done
+
+  - id: done
+    depends_on: [pek_teardown]

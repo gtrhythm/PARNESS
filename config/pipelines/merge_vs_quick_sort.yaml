@@ -1,0 +1,91 @@
+name: merge_vs_quick_sort
+config:
+  ideas:
+    - title: "归并排序 vs 快速排序：不同数据分布下的性能对比"
+      description: >
+        归并排序稳定O(n log n)但需要O(n)额外空间，快速排序平均O(n log n)但最坏O(n^2)且原地排序。
+        本实验在数据规模1000-1000000、数据分布（随机、近似有序、完全逆序、大量重复）
+        下对比两种排序算法的运行时间、比较次数和内存使用。
+        特别关注快速排序在逆序数据上的退化现象，以及归并排序的稳定性在重复元素场景下的表现。
+      category: "algorithm"
+      novelty_score: 3.5
+      feasibility_score: 9.5
+      impact_score: 3.0
+  idea:
+    title: "归并排序 vs 快速排序：不同数据分布下的性能对比"
+    description: >
+      对比归并排序（稳定O(n log n)需O(n)空间）和快速排序（平均O(n log n)原地排序但最坏O(n^2)）。
+      在数据规模1000-1000000、不同分布（随机/有序/逆序/重复）下对比运行时间、比较次数和内存。
+      重点验证快速排序在逆序数据上的退化现象。
+    category: "algorithm"
+    novelty_score: 3.5
+    feasibility_score: 9.5
+    impact_score: 3.0
+  idea_text: "对比归并排序和快速排序的性能差异。归并排序稳定O(n log n)需O(n)空间，快速排序平均O(n log n)原地排序但最坏O(n^2)。实验在数据规模1000-1000000、分布（随机/近似有序/逆序/大量重复）下对比运行时间、比较次数和内存使用，验证快速排序在逆序数据上的退化现象。"
+  idea_title: "归并排序 vs 快速排序：不同数据分布下的性能对比"
+  topic: "排序算法性能分析"
+
+nodes:
+  - id: idea_evaluation
+    module: idea_evaluator
+    input_mapping:
+      ideas: config.ideas
+    output_mapping:
+      evaluations: evaluated_ideas
+      ranked_ideas: ranked_ideas
+      summary: evaluation_summary
+
+  - id: experiment_plan
+    module: experiment_plan_generator
+    depends_on: [idea_evaluation]
+    input_mapping:
+      content: config.idea_text
+    output_mapping:
+      experiment_plan: experiment_plan
+
+  - id: experiment_report
+    module: experiment_report_generator
+    depends_on: [experiment_plan]
+    input_mapping:
+      idea: config.idea_text
+      experiment_plan: output.experiment_plan.experiment_plan
+      experiment_results: output.experiment_plan.experiment_plan
+    output_mapping:
+      report: experiment_report
+
+  - id: paper_writing
+    module: paper_writer
+    depends_on: [experiment_report]
+    input_mapping:
+      title: config.idea_title
+      idea: config.idea
+      experiment_results: output.experiment_report.report
+    output_mapping:
+      draft: paper_draft
+
+  - id: paper_review
+    module: paper_reviewer
+    depends_on: [paper_writing]
+    input_mapping:
+      paper_content: output.paper_writing.draft
+    output_mapping:
+      overall_score: review_score
+      summary: review_summary
+      critiques: review_critiques
+
+  - id: paper_revision
+    module: paper_editor
+    depends_on: [paper_review, paper_writing]
+    input_mapping:
+      paper_draft: output.paper_writing.draft
+      review_comments: output.paper_review.critiques
+    output_mapping:
+      revised_draft: final_paper
+
+edges:
+  - {from: idea_evaluation, to: experiment_plan}
+  - {from: experiment_plan, to: experiment_report}
+  - {from: experiment_report, to: paper_writing}
+  - {from: paper_writing, to: paper_review}
+  - {from: paper_review, to: paper_revision, condition: success}
+  - {from: paper_review, to: paper_writing, condition: failed}

@@ -1,0 +1,92 @@
+name: title_persist_layer
+description: |
+  Layer 2 of the decoupled three-pipeline architecture.
+
+  Watches output/pdf_kit_parsed/, picks any folder that:
+    * has the layer-1 outputs ({paper_id}.json + {paper_id}.md +
+      paper_id.txt),
+    * does NOT yet have title.md,
+    * has been quiet for at least min_quiet_seconds (so layer 1 is
+      definitely done writing it),
+  runs 3-vote LLM title extraction, and writes title.md back into the
+  same folder. No DB writes — layer 3 picks it up.
+
+config:
+  max_rounds: 8000
+  parsed_root: "output/pdf_kit_parsed"
+
+nodes:
+  # ── Pick a quiet, title-less folder ─────────────────────────────
+  - id: feeder
+    module: parsed_folder_freshness_feeder
+    params:
+      parsed_root: "output/pdf_kit_parsed"
+      # paper_id.txt is layer 1's LAST write (parse → ID alloc → mover →
+      # paper_id.txt), so its presence already implies layer 1 finished
+      # this paper. 30s is a generous safety margin for filesystem flush.
+      min_quiet_seconds: 30
+      require_files: ["paper_id.txt"]
+      forbid_files: ["title.md"]
+      wait_seconds: 30
+      max_wait_total_seconds: 0
+    routes:
+      has_next: load_parsed
+      exhausted: done
+
+  # ── Load JSON + MD from the dispatched folder ───────────────────
+  - id: load_parsed
+    module: parsed_folder_loader
+    depends_on: [feeder]
+    input_mapping:
+      folder_path: output.feeder.folder_path
+      paper_id: output.feeder.paper_id
+    routes:
+      default: parse_gate
+
+  - id: parse_gate
+    module: parse_result_gate
+    depends_on: [load_parsed]
+    input_mapping:
+      parsed_papers: output.load_parsed.parsed_papers
+      parse_errors: output.load_parsed.parse_errors
+    routes:
+      success: extract_title
+      fail: feeder
+
+  # ── 3-vote LLM title extraction (headings only) ────────────────
+  - id: extract_title
+    module: title_extractor
+    depends_on: [parse_gate]
+    input_mapping:
+      papers: output.load_parsed.parsed_papers
+    params:
+      headings_only: true
+      consensus_n: 3
+      max_retries: 6
+      max_concurrent: 1
+    routes:
+      default: title_gate
+
+  - id: title_gate
+    module: title_result_gate
+    depends_on: [extract_title]
+    input_mapping:
+      titles: output.extract_title.titles
+      paper_id: output.parse_gate.paper_id
+    routes:
+      success: persist_title
+      fail: feeder
+
+  # ── Write <folder>/title.md ────────────────────────────────────
+  - id: persist_title
+    module: title_persist
+    depends_on: [title_gate]
+    input_mapping:
+      folder_path: output.feeder.folder_path
+      title: output.title_gate.validated_title
+      paper_id: output.parse_gate.paper_id
+    routes:
+      default: feeder
+
+  - id: done
+    depends_on: [feeder]

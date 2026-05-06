@@ -1,0 +1,200 @@
+name: iterative_research_pipeline
+config:
+  topic: "neural architecture search"
+  target_idea_count: 10
+  evaluation_threshold: 7.0
+
+nodes:
+  # ==================== 阶段1: PDF解析 ====================
+  - id: pdf_extraction
+    module: pdf_parser
+    params:
+      max_concurrent: 4
+    input_mapping:
+      pdf_dir: "downloaded_papers/arxiv_cvpr/2026"
+    output_mapping:
+      papers: extracted_papers
+      paper_count: extraction_count
+
+  # ==================== 阶段2: 知识库构建 ====================
+  - id: paper_analysis
+    module: analyst_agent
+    depends_on: [pdf_extraction]
+    input_mapping:
+      papers: output.pdf_extraction.extracted_papers
+    output_mapping:
+      clusters: compressed_insights
+      analyst_seeds: analyst_seeds
+      knowledge_base: knowledge_base
+      cross_cluster_gaps: cross_cluster_gaps
+
+  - id: knowledge_save
+    module: kb_save
+    depends_on: [paper_analysis]
+    params:
+      replication_problems: []
+      transfer_ideas: []
+      critiques: []
+      theory_improvements: []
+      trends: []
+      meta_gaps: []
+      follow_up_ideas: []
+      failure_cases: []
+      limitation_extensions: []
+      hypotheses: []
+      evidence_items: []
+      ranked_ideas: []
+    input_mapping:
+      compressed_insights: output.paper_analysis.compressed_insights
+      analyst_seeds: output.paper_analysis.analyst_seeds
+    output_mapping:
+      total_insights: insight_count
+      total_seeds: seed_count
+      total_ideas: idea_count
+
+  # ==================== 阶段3: 创意生成与评估 (迭代循环) ====================
+  - id: idea_generation
+    module: idea_generator
+    depends_on: [knowledge_save]
+    input_mapping:
+      task_domain: config.topic
+      innovations: output.knowledge_save.insight_count
+      references: output.knowledge_save.seed_count
+    output_mapping:
+      ideas: generated_ideas
+      report: idea_report
+
+  - id: idea_evaluation
+    module: idea_evaluator
+    depends_on: [idea_generation]
+    input_mapping:
+      ideas: output.idea_generation.generated_ideas
+    output_mapping:
+      evaluations: evaluated_ideas
+      ranked_ideas: ranked_ideas
+      summary: evaluation_summary
+
+  # ==================== 阶段4: 创意调度与探索 ====================
+  - id: idea_scheduler
+    module: idea_scheduler
+    depends_on: [idea_evaluation]
+    input_mapping:
+      ranked_ideas: output.idea_evaluation.ranked_ideas
+      batch_id: config.topic
+      paper_count: output.pdf_extraction.extraction_count
+      insight_count: output.knowledge_save.insight_count
+      seed_count: output.knowledge_save.seed_count
+    output_mapping:
+      scheduled_count: scheduled_count
+      evaluation_count: evaluation_count
+      scheduler_stats: stats
+      top_ideas: top_ideas
+
+  - id: exploration_merge
+    module: exploration_merge
+    depends_on: [idea_scheduler]
+    input_mapping:
+      refined_ideas: output.idea_evaluation.ranked_ideas
+    output_mapping:
+      saved_explorations: exploration_count
+      refined_ideas: refined_ideas_output
+      total_explorations: total_count
+
+  # ==================== 阶段5: 实验设计与执行 ====================
+  - id: experiment_design
+    module: experiment_plan_generator
+    depends_on: [exploration_merge]
+    input_mapping:
+      content: output.idea_evaluation.ranked_ideas
+    output_mapping:
+      experiment_plan: designed_experiments
+
+  - id: experiment_runner
+    module: experiment_runner
+    depends_on: [experiment_design]
+    input_mapping:
+      designed_experiments: output.experiment_design.designed_experiments
+
+  - id: experiment_evaluation
+    module: experiment_evaluator
+    depends_on: [experiment_runner]
+    input_mapping:
+      experiment_results: output.experiment_runner.experiment_results
+    output_mapping:
+      eval_report: eval_reports
+      metrics: eval_metrics
+      summary: eval_summary
+
+# ==================== 边定义 ====================
+edges:
+  # 主要流程
+  - {from: pdf_extraction, to: paper_analysis}
+  - {from: paper_analysis, to: knowledge_save}
+  - {from: knowledge_save, to: idea_generation}
+  - {from: idea_generation, to: idea_evaluation}
+  - {from: idea_evaluation, to: idea_scheduler}
+  - {from: idea_scheduler, to: exploration_merge}
+  - {from: exploration_merge, to: experiment_design}
+  - {from: experiment_design, to: experiment_runner}
+  - {from: experiment_runner, to: experiment_evaluation}
+
+  # 失败回退边
+  - {from: idea_evaluation, to: idea_generation, condition: failed, max_retries: 2}
+  - {from: experiment_design, to: idea_evaluation, condition: failed, max_retries: 1}
+  - {from: experiment_runner, to: experiment_design, condition: failed, max_retries: 2}
+
+# ==================== 监控指标 ====================
+monitoring:
+  metrics:
+    - name: papers_extracted
+      source: [pdf_extraction]
+      aggregation: last
+      key: extraction_count
+
+    - name: ideas_generated
+      source: [idea_generation]
+      aggregation: last
+
+    - name: top_idea_score
+      source: [idea_evaluation]
+      aggregation: max
+      key: ranked_ideas[0].overall_score
+
+    - name: experiment_duration
+      source: [experiment_runner]
+      aggregation: mean
+
+    - name: final_eval_score
+      source: [experiment_evaluation]
+      aggregation: last
+      key: metrics.overall
+
+  alerts:
+    - condition: papers_extracted < 10
+      level: warning
+      message: "Low PDF extraction count"
+
+    - condition: top_idea_score < 5.0
+      level: error
+      message: "All ideas below quality threshold"
+
+    - condition: experiment_runner.duration > 3600
+      level: warning
+      message: "Experiment approaching timeout"
+
+# ==================== 重试策略 ====================
+retry_policy:
+  default:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: 1
+    max_delay: 60
+
+  overrides:
+    experiment_runner:
+      max_attempts: 2
+      backoff: linear
+
+    idea_generation:
+      max_attempts: 4
+      backoff: exponential

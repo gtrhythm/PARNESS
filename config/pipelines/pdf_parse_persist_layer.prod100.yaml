@@ -1,0 +1,88 @@
+name: pdf_parse_persist_layer_prod100
+description: |
+  Production-data 100-PDF batch run, layer 1 (parse + id allocate + move).
+  Same as pdf_parse_persist_layer.yaml but reads a 100-paper list and
+  uses an isolated pdf_queue state dir so the main full_pdf_list.json
+  queue (cursor=188 / 2926 items) is left untouched.
+  Output dir, db_path, target_root all stay on PRODUCTION paths so the
+  parses become permanent and avoid re-computation.
+
+config:
+  max_rounds: 4000
+  output_dir: "output/pdf_kit_parsed"
+
+nodes:
+  - id: pek_init
+    module: pek_start
+    params:
+      state_dir: "output/pek_daemon"
+    routes:
+      default: feeder
+
+  - id: feeder
+    module: pdf_queue_feeder
+    depends_on: [pek_init]
+    params:
+      pdf_list_path: "output/prod100_pdf_list.json"
+      state_dir: "output/pdf_queue_prod100"
+    routes:
+      has_next: parse_one
+      exhausted: pek_teardown
+
+  - id: parse_one
+    module: pek_parse
+    depends_on: [feeder]
+    input_mapping:
+      pdf_path: output.feeder.pdf_path
+      socket_path: output.pek_init.socket_path
+      output_dir: config.output_dir
+    params:
+      state_dir: "output/pek_daemon"
+      timeout_seconds: 1800
+    routes:
+      default: parse_gate
+
+  - id: parse_gate
+    module: parse_result_gate
+    depends_on: [parse_one]
+    input_mapping:
+      parsed_papers: output.parse_one.parsed_papers
+      parse_errors: output.parse_one.parse_errors
+    routes:
+      success: id_allocate
+      fail: feeder
+
+  - id: id_allocate
+    module: paper_id_allocator
+    depends_on: [parse_gate]
+    input_mapping:
+      parsed_papers: output.parse_gate.parsed_papers
+    params:
+      db_path: "output/papers.db"
+    routes:
+      ok: pdf_move
+      skip: pdf_move
+      fail: feeder
+
+  - id: pdf_move
+    module: pdf_mover
+    depends_on: [id_allocate]
+    input_mapping:
+      parsed_papers: output.parse_gate.parsed_papers
+    params:
+      source_root: "downloaded_papers"
+      target_root: "parsedpaper"
+    routes:
+      default: feeder
+
+  - id: pek_teardown
+    module: pek_stop
+    depends_on: [feeder]
+    params:
+      state_dir: "output/pek_daemon"
+      grace_seconds: 30
+    routes:
+      default: done
+
+  - id: done
+    depends_on: [pek_teardown]

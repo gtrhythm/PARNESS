@@ -1,0 +1,62 @@
+platforms:
+  arxiv:
+    api_url: https://export.arxiv.org/api/query
+    rate_limit: 3.0
+    pdf_url_template: "https://arxiv.org/pdf/{id}.pdf"
+  openreview:
+    api_url: https://api.openreview.net
+    rate_limit: 1.0
+    pdf_url_template: "https://openreview.net/pdf?id={id}"
+  ncbi:
+    api_url: https://eutils.ncbi.nlm.nih.gov/entrez/eutils
+    rate_limit_with_key: 0.35
+    rate_limit_without_key: 1.0
+  biorxiv:
+    api_url: https://api.biorxiv.org
+    rate_limit: 1.0
+  medrxiv:
+    api_url: https://api.medrxiv.org
+    rate_limit: 1.0
+  s2:
+    api_url: https://api.semanticscholar.org/graph/v1
+    rate_limit: 1.0
+  crossref:
+    api_url: https://api.crossref.org/works
+    rate_limit: 1.0
+  openalex:
+    api_url: https://api.openalex.org/works
+    rate_limit: 0.1
+    mailto: research@example.com
+  dblp:
+    api_url: https://dblp.org/search/publ/api
+    rate_limit: 1.0
+  plos:
+    api_url: https://api.plos.org/search
+    rate_limit: 0.1
+  europe_pmc:
+    api_url: https://www.ebi.ac.uk/europepmc/webservices/rest/search
+    rate_limit: 0.5
+  acl:
+    base_url: https://aclanthology.org
+    rate_limit: 1.0
+  cvf:
+    base_url: https://openaccess.thecvf.com
+    rate_limit: 1.0
+  ieee:
+    api_url: https://ieeexploreapi.ieee.org/api/v1/search/articles
+    rate_limit: 1.0
+  frontiers:
+    base_url: https://www.frontiersin.org
+    rate_limit: 1.0
+  ssrn:
+    base_url: https://papers.ssrn.com
+    rate_limit: 1.0
+  springer:
+    api_url: https://api.springernature.com/meta/v2/json
+    rate_limit: 0.5
+  acs:
+    base_url: https://pubs.acs.org
+    rate_limit: 1.0
+  unpaywall:
+    api_url: https://api.unpaywall.org/v2
+    rate_limit: 0.1

@@ -1,0 +1,100 @@
+name: pdf_parse_persist_layer
+description: |
+  Layer 1 of the decoupled three-pipeline architecture.
+
+  Parses PDFs from downloaded_papers/ via the PEK daemon, reserves a
+  paper_id in papers.db (placeholder row), drops paper_id.txt next to
+  the parse output, and moves the PDF to parsedpaper/. Does NOT touch
+  pdf_extractions / paper metadata — those layers live in pipelines 2
+  and 3 and consume the parsed folder via the filesystem.
+
+config:
+  max_rounds: 4000
+  output_dir: "output/pdf_kit_parsed"
+
+nodes:
+  # ── Cold-start the PEK daemon once ───────────────────────────────
+  - id: pek_init
+    module: pek_start
+    params:
+      state_dir: "output/pek_daemon"
+    routes:
+      default: feeder
+
+  # ── Dispatch one PDF at a time ──────────────────────────────────
+  - id: feeder
+    module: pdf_queue_feeder
+    depends_on: [pek_init]
+    params:
+      pdf_list_path: "output/full_pdf_list.json"
+      state_dir: "output/pdf_queue"
+    routes:
+      has_next: parse_one
+      exhausted: pek_teardown
+
+  # ── Parse via daemon RPC (no model reload) ──────────────────────
+  - id: parse_one
+    module: pek_parse
+    depends_on: [feeder]
+    input_mapping:
+      pdf_path: output.feeder.pdf_path
+      socket_path: output.pek_init.socket_path
+      output_dir: config.output_dir
+    params:
+      state_dir: "output/pek_daemon"
+      # Diagnostic data (output/diag_pek_failures.log): a 30-page paper with
+      # 26 tables took 12.7 min in PEK because _parse_tables is sequential
+      # (~22s/table). 1800s = 30min covers reasonable worst case; tune up
+      # if you see further timeouts on table-heavy papers.
+      timeout_seconds: 1800
+    routes:
+      default: parse_gate
+
+  # ── Gate: parse success? ────────────────────────────────────────
+  - id: parse_gate
+    module: parse_result_gate
+    depends_on: [parse_one]
+    input_mapping:
+      parsed_papers: output.parse_one.parsed_papers
+      parse_errors: output.parse_one.parse_errors
+    routes:
+      success: id_allocate
+      fail: feeder
+
+  # ── Reserve paper_id in papers.db + write paper_id.txt ──────────
+  - id: id_allocate
+    module: paper_id_allocator
+    depends_on: [parse_gate]
+    input_mapping:
+      parsed_papers: output.parse_gate.parsed_papers
+    params:
+      db_path: "output/papers.db"
+    routes:
+      ok: pdf_move
+      skip: pdf_move    # already fully persisted; still move the PDF
+      fail: feeder
+
+  # ── Move the PDF: downloaded_papers/<rel>.pdf -> parsedpaper/<rel>.pdf
+  - id: pdf_move
+    module: pdf_mover
+    depends_on: [id_allocate]
+    input_mapping:
+      parsed_papers: output.parse_gate.parsed_papers
+    params:
+      source_root: "downloaded_papers"
+      target_root: "parsedpaper"
+    routes:
+      default: feeder
+
+  # ── Teardown daemon when queue is exhausted ─────────────────────
+  - id: pek_teardown
+    module: pek_stop
+    depends_on: [feeder]
+    params:
+      state_dir: "output/pek_daemon"
+      grace_seconds: 30
+    routes:
+      default: done
+
+  - id: done
+    depends_on: [pek_teardown]

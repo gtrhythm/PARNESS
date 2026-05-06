@@ -1,0 +1,41 @@
+domains:
+  cs:
+    summary_agents: [arxiv, s2, dblp]
+    default_categories: [cs.AI, cs.CL, cs.CV, cs.LG, cs.RO]
+  physics:
+    summary_agents: [arxiv, s2, crossref]
+    default_categories: [hep-lat, hep-ph, cond-mat, astro-ph]
+  math:
+    summary_agents: [arxiv, s2, crossref]
+    default_categories: [math.CO, math.ST, math.AP]
+  stat:
+    summary_agents: [arxiv, s2, crossref]
+    default_categories: [stat.ML, stat.CO, stat.ME]
+  bio:
+    summary_agents: [ncbi, biorxiv, plos, europe_pmc, s2]
+    mesh_terms: ["Biology[MeSH]", "Biochemistry[MeSH]"]
+  neuroscience:
+    summary_agents: [ncbi, biorxiv, frontiers, s2]
+    mesh_terms: ["Brain[MeSH]", "Neuroscience[MeSH]"]
+  medicine:
+    summary_agents: [ncbi, biorxiv, europe_pmc, crossref, s2]
+    mesh_terms: ["Medicine[MeSH]", "Clinical Medicine[MeSH]"]
+  psychology:
+    summary_agents: [ncbi, s2, crossref]
+    mesh_terms: ["Psychology[MeSH]"]
+  chemistry:
+    summary_agents: [s2, crossref, springer]
+  economics:
+    summary_agents: [s2, crossref, ssrn]
+  nlp:
+    summary_agents: [arxiv, acl, s2, dblp]
+  cv:
+    summary_agents: [arxiv, cvf, s2, dblp]
+  robotics:
+    summary_agents: [arxiv, ieee, s2]
+  materials:
+    summary_agents: [crossref, springer, s2]
+  ee:
+    summary_agents: [arxiv, ieee, s2]
+  earth_env:
+    summary_agents: [crossref, springer, s2]

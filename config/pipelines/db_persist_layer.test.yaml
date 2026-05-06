@@ -1,0 +1,116 @@
+name: db_persist_layer_test
+description: "Smoke-test variant: scans pdf_kit_parsed_test, S2-priority summary, no-summary fallthrough."
+
+config:
+  max_rounds: 200
+  parsed_root: "output/pdf_kit_parsed_test"
+  db_path: "output/papers.db"
+  figures_base_dir: "output/figures"
+
+nodes:
+  - id: feeder
+    module: parsed_folder_freshness_feeder
+    params:
+      parsed_root: "output/pdf_kit_parsed_test"
+      min_quiet_seconds: 5
+      require_files: ["paper_id.txt", "title.md"]
+      forbid_files: []
+      skip_persisted_db: "output/papers.db"
+      wait_seconds: 15
+      max_wait_total_seconds: 2400
+    routes:
+      has_next: load_parsed
+      exhausted: done
+
+  - id: load_parsed
+    module: parsed_folder_loader
+    depends_on: [feeder]
+    input_mapping:
+      folder_path: output.feeder.folder_path
+      paper_id: output.feeder.paper_id
+    routes:
+      default: parse_gate
+
+  - id: parse_gate
+    module: parse_result_gate
+    depends_on: [load_parsed]
+    input_mapping:
+      parsed_papers: output.load_parsed.parsed_papers
+      parse_errors: output.load_parsed.parse_errors
+    routes:
+      success: load_title
+      fail: feeder
+
+  - id: load_title
+    module: title_loader
+    depends_on: [parse_gate]
+    input_mapping:
+      folder_path: output.feeder.folder_path
+      paper_id: output.parse_gate.paper_id
+    routes:
+      ok: search_summary
+      fail: persist_parse_no_summary
+
+  - id: search_summary
+    module: paper_summary_search
+    depends_on: [load_title]
+    input_mapping:
+      title: output.load_title.title
+    routes:
+      default: summary_gate
+
+  - id: summary_gate
+    module: summary_result_gate
+    depends_on: [search_summary]
+    input_mapping:
+      metadata: output.search_summary.metadata
+      source: output.search_summary.source
+      paper_id: output.parse_gate.paper_id
+    routes:
+      success: id_align
+      fail: persist_parse_no_summary
+
+  - id: id_align
+    module: id_align_gate
+    depends_on: [summary_gate]
+    input_mapping:
+      metadata: output.summary_gate.metadata
+      paper_id: output.parse_gate.paper_id
+    routes:
+      default: persist_parse
+
+  - id: persist_parse
+    module: pdf_kit_parse_persist
+    depends_on: [id_align]
+    input_mapping:
+      parsed_papers: output.load_parsed.parsed_papers
+    params:
+      db_path: "output/papers.db"
+      figures_base_dir: "output/figures"
+    routes:
+      default: persist_summary
+
+  - id: persist_summary
+    module: summary_persist
+    depends_on: [persist_parse]
+    input_mapping:
+      metadata: output.id_align.metadata
+      source: output.search_summary.source
+    params:
+      db_path: "output/papers.db"
+    routes:
+      default: feeder
+
+  - id: persist_parse_no_summary
+    module: pdf_kit_parse_persist
+    depends_on: [parse_gate]
+    input_mapping:
+      parsed_papers: output.load_parsed.parsed_papers
+    params:
+      db_path: "output/papers.db"
+      figures_base_dir: "output/figures"
+    routes:
+      default: feeder
+
+  - id: done
+    depends_on: [feeder]

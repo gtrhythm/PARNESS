@@ -1,0 +1,3 @@
+[submodule "src/PDF-Extract-Kit"]
+	path = src/PDF-Extract-Kit
+	url = https://github.com/opendatalab/PDF-Extract-Kit.git

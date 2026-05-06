@@ -1,0 +1,20 @@
+hardware:
+  gpu:
+    available: false
+    type: ""
+    count: 0
+    memory_gb: 0
+  cpu:
+    cores: 8
+    architecture: "x86_64"
+  memory:
+    total_gb: 32
+  storage:
+    total_gb: 500
+    ssd: true
+
+software:
+  - name: "Python"
+    version: "3.10"
+
+network: []

@@ -1,0 +1,54 @@
+name: conditional_merge_decision_demo
+config:
+  max_global_iterations: 5
+  topic: ""
+
+nodes:
+  - id: idea_generation
+    module: idea_generator
+    input_mapping:
+      innovations: innovations
+      references: references
+      task_domain: config.topic
+    output_mapping:
+      ideas: generated_ideas
+      report: idea_report
+
+  - id: idea_evaluation
+    module: idea_evaluator
+    depends_on: [idea_generation]
+    input_mapping:
+      ideas: output.idea_generation.ideas
+    output_mapping:
+      evaluations: evaluated_ideas
+      ranked_ideas: ranked_ideas
+      summary: evaluation_summary
+
+  - id: quality_gate
+    depends_on: [idea_evaluation]
+
+  - id: experiment_design
+    module: experiment_plan_generator
+    input_mapping:
+      content: output.idea_evaluation.ranked_ideas
+    output_mapping:
+      experiment_plan: designed_experiments
+
+  - id: literature_survey
+    module: surveyor_agent
+    input_mapping:
+      query: output.idea_evaluation.summary
+    output_mapping:
+      papers: survey_results
+
+  - id: branch_merge
+    depends_on: [experiment_design, literature_survey]
+    output_mapping:
+      combined: merged_results
+
+edges:
+  - {from: idea_generation, to: idea_evaluation}
+  - {from: idea_evaluation, to: quality_gate}
+  - {from: quality_gate, to: branch_merge, condition: success}
+  - {from: quality_gate, to: idea_generation, condition: failed}
+  - {from: idea_evaluation, to: idea_generation, condition: failed}

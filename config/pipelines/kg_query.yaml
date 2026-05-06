@@ -1,0 +1,10 @@
+name: kg_query
+description: "Natural language query against knowledge graph"
+
+nodes:
+  - id: nl_query
+    module: kg_nl_query
+    input_mapping:
+      question: config.question
+      max_hops: config.max_hops
+      top_k: config.top_k

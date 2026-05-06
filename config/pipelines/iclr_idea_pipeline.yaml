@@ -1,0 +1,150 @@
+# ICLR Idea Generation Pipeline
+# Crawls ICLR papers, extracts innovations, generates and evaluates 20 ideas
+
+name: iclr_idea_pipeline
+config:
+  max_global_iterations: 5
+  target_idea_count: 20
+  iclr_years: [2024, 2025, 2026]
+  min_paper_rating: 5.0
+  task_domain: "machine learning"
+
+nodes:
+  # Phase 1: Crawl ICLR papers from Semantic Scholar
+  - id: crawl_iclr
+    module: iclr_crawler
+    params:
+      download_pdf: false
+      max_papers_per_year: 5
+    output_mapping:
+      pdf_dir: downloaded_pdfs
+      metadata: paper_metadata
+      paper_count: total_papers
+
+  # Phase 2: Parse PDFs to text
+  - id: parse_pdfs
+    module: pdf_parser
+    depends_on: [crawl_iclr]
+    params:
+      engine: pdf_extract_kit
+      max_concurrent: 8
+    input_mapping:
+      pdf_dir: output.crawl_iclr.pdf_dir
+      metadata: output.crawl_iclr.metadata
+    output_mapping:
+      papers: parsed_papers
+      paper_count: papers_parsed
+
+  # Phase 3: Extract innovations from papers
+  - id: extract_innovations
+    module: idea_extractor
+    depends_on: [parse_pdfs]
+    params:
+      max_concurrent: 4
+    input_mapping:
+      papers: output.parse_pdfs.papers
+    output_mapping:
+      all_innovations: extracted_innovations
+      all_methods: extracted_methods
+      all_scenarios: extracted_scenarios
+      all_techniques: extracted_techniques
+
+  # Phase 4: Store papers in VectorDB (optional)
+  - id: store_papers
+    module: paper_store
+    depends_on: [extract_innovations]
+    input_mapping:
+      papers: output.parse_pdfs.papers
+      innovations: output.extract_innovations.all_innovations
+    output_mapping:
+      stored_count: papers_stored
+
+  # Phase 5: Generate ideas (iterative, multi-round)
+  - id: generate_ideas
+    module: idea_generator
+    depends_on: [store_papers]
+    params:
+      target_count: 20
+      combination_depth: 2
+      generation_strategy: diverse
+    input_mapping:
+      innovations: output.extract_innovations.all_innovations
+      references: output.crawl_iclr.metadata
+      task_domain: config.task_domain
+      existing_ideas: output.generate_ideas.ideas
+    output_mapping:
+      ideas: generated_ideas
+      report: generation_report
+
+  # Phase 6: Evaluate ideas (iterative)
+  - id: evaluate_ideas
+    module: idea_evaluator
+    depends_on: [generate_ideas]
+    params:
+      batch_size: 5
+    input_mapping:
+      ideas: output.generate_ideas.ideas
+    output_mapping:
+      evaluations: idea_evaluations
+      ranked_ideas: ranked_ideas
+      avg_score: evaluation_avg_score
+
+  # Phase 7: Deduplicate ideas
+  - id: deduplicate
+    module: idea_deduplicator
+    depends_on: [evaluate_ideas]
+    params:
+      similarity_threshold: 0.85
+    input_mapping:
+      ideas: output.evaluate_ideas.ranked_ideas
+    output_mapping:
+      unique_ideas: deduplicated_ideas
+      duplicate_count: removed_duplicates
+
+  # Phase 8: Filter top 20
+  - id: filter_top20
+    module: topk_filter
+    depends_on: [deduplicate]
+    params:
+      target_count: 20
+      min_score: 6.0
+    input_mapping:
+      ranked_ideas: output.deduplicate.unique_ideas
+    output_mapping:
+      selected_ideas: final_top20_ideas
+      rejected_count: rejected_count
+
+  # Phase 9: Review ideas (iterative)
+  - id: review_ideas
+    module: idea_reviewer
+    depends_on: [filter_top20]
+    input_mapping:
+      ideas: output.filter_top20.selected_ideas
+    output_mapping:
+      reviewed_ideas: final_ideas
+      review_report: final_review_report
+
+  # Phase 10: Export results
+  - id: output_results
+    module: result_exporter
+    depends_on: [review_ideas]
+    input_mapping:
+      ideas: output.review_ideas.reviewed_ideas
+      generation_report: output.generate_ideas.report
+      evaluation_report: output.evaluate_ideas.summary
+    output_mapping:
+      output_file: final_output_path
+
+edges:
+  - {from: crawl_iclr, to: parse_pdfs}
+  - {from: parse_pdfs, to: extract_innovations}
+  - {from: extract_innovations, to: store_papers}
+  - {from: store_papers, to: generate_ideas}
+  - {from: generate_ideas, to: evaluate_ideas, condition: success}
+  - {from: evaluate_ideas, to: deduplicate, condition: success}
+  - {from: deduplicate, to: filter_top20}
+  - {from: filter_top20, to: review_ideas}
+  - {from: review_ideas, to: output_results, condition: success}
+  - {from: generate_ideas, to: extract_innovations, condition: failed}
+  - {from: evaluate_ideas, to: generate_ideas, condition: failed}
+  - {from: review_ideas, to: evaluate_ideas, condition: failed && avg_score < 6.0}

@@ -1,0 +1,17 @@
+pdf_agent_priority:
+  - arxiv
+  - openreview
+  - biorxiv
+  - plos
+  - acl
+  - cvf
+  - frontiers
+  - europe_pmc
+  - s2
+  - ncbi
+  - crossref
+  - springer
+  - ssrn
+  - unpaywall
+  - ieee
+  - acs
