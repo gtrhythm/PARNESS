@@ -17,13 +17,26 @@
 
 ## Overview
 
-PARNESS automates the full lifecycle of academic research — from paper discovery through insight extraction, idea generation, experiment execution, to paper writing — powered by a **declarative DAG orchestration engine** with 140+ pluggable agent modules.
+PARNESS is a **declarative DAG orchestration framework** for academic research, with 140+ pluggable agent modules that you compose into arbitrary workflows via pure YAML — no code required.
+
+The framework imposes no fixed pipeline shape. Wire any subset of modules in any topology: linear chains, iterative loops, fan-out branches, conditional routing, nested sub-pipelines. A few examples of what a single YAML file can express:
 
 ```
-Paper Crawling ➜ PDF Parsing ➜ Insight Extraction ➜ Idea Generation/Evaluation ➜ Experiment Design/Execution ➜ Paper Writing
+# Iterative idea generation with quality gates
+retrieve papers ➜ generate idea ➜ evaluate ➜ accept? save & continue : reject & loop
+
+# Multi-source parallel crawl + merge
+[crawl arXiv] ─┐
+[crawl S2]     ├➜ aggregate ➜ dedup ➜ persist
+[crawl OpenAlex]─┘
+
+# Full lifecycle with nested loops
+search ➜ parse ➜ index ➜ [generate ideas (loop until N accepted)]
+                     ➜ [design experiment ➜ run ➜ verify (loop until pass)]
+                     ➜ write paper ➜ review ➜ revise
 ```
 
-**What makes PARNESS different** is its pipeline engine: every workflow is a **pure YAML file**. No Python code is required to compose, extend, or rewire research pipelines. The framework provides topology sorting and data passing — all domain decisions (branching, iteration, evaluation) are made by autonomous agent nodes on the graph.
+**What makes PARNESS different**: the framework provides only topology sorting and data passing. All domain decisions — branching, iteration, evaluation — are made by autonomous agent nodes emitting `_route` signals. There are no hardcoded pipeline types; every control-flow pattern is just a YAML wiring convention.
 
 ---
 
